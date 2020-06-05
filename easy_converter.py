@@ -1,8 +1,8 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 import re
-
 import os
+
 from enum import Enum
 from openpyxl import load_workbook
 
@@ -190,8 +190,8 @@ class BaseConverter:
     def __init__(self, *args, **kwargs):
         self.path_source = kwargs.get("source") or '.'
         self.path_out = kwargs.get("out") or './out'
-        self.path_out_data = kwargs.get("out_data") or './out_data'
-        self.name_space = kwargs.get("name_space") or 'EasyConverter'
+        self.path_out_data = kwargs.get("outdata") or './out_data'
+        self.name_space = kwargs.get("namespace") or 'EasyConverter'
         self.file_ext = ""
 
     def ensure_path(self, path):

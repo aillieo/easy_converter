@@ -1,11 +1,8 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
-import sys
 
-sys.path.append("..")
-sys.path.append(".")
-
-from easy_converter import BaseConverter
+import argparse
+import easy_converter
 
 template_cs = {
     "field": '''
@@ -197,10 +194,10 @@ using System.Collections.Generic;
 }
 
 
-class CSharpConverter(BaseConverter):
+class CSharpConverter(easy_converter.BaseConverter):
 
     def __init__(self, *args, **kwargs):
-        BaseConverter.__init__(self, *args, **kwargs)
+        easy_converter.BaseConverter.__init__(self, *args, **kwargs)
         self.file_ext = ".cs"
 
     def get_type_name(self, field):
@@ -210,20 +207,12 @@ class CSharpConverter(BaseConverter):
 
 
 if __name__ == '__main__':
-    # print(sys.argv)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-source", type=str)
+    parser.add_argument("-out", type=str, default='./out')
+    parser.add_argument("-outdata", type=str, default='./out/data')
+    parser.add_argument("-namespace", type=str, default='EasyConverter')
+    parsed_args = vars(parser.parse_args())
 
-    args = {}
-    for index, arg in enumerate(sys.argv):
-        if arg == '-source':
-            args['source'] = sys.argv[index + 1]
-        elif arg == '-out':
-            args['out'] = sys.argv[index + 1]
-        elif arg == '-outdata':
-            args['out_data'] = sys.argv[index + 1]
-        elif arg == '-namespace':
-            args['name_space'] = sys.argv[index + 1]
-
-    # print(args)
-
-    converter = CSharpConverter(**args)
+    converter = CSharpConverter(**parsed_args)
     converter.convert(template_cs)
