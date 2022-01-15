@@ -201,7 +201,7 @@ class JavaConverter(easy_converter.BaseConverter):
         self.file_ext = ".java"
 
     def get_type_name(self, field):
-        if field.isStruct:
+        if isinstance(field, easy_converter.FieldStruct):
             return "Object"
         if field.field_def == "int":
             return "Integer"

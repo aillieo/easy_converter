@@ -13,48 +13,69 @@ class FieldType(Enum):
     List = 2
     Dictionary = 3
     Struct = 4
+    Enum = 5
 
 
 class Field:
     re_list = re.compile(r"List<(\w+)>")
     re_dict = re.compile(r"Map<(\w+),(\w+)>")
-    re_struct = re.compile(r"Struct<([\w,]+)>")
+    re_struct = re.compile(r"Struct<([\w\(\w\),]+)>")
+    re_enum = re.compile(r"Enum<([\w\(\d\),]+)>")
+    primitive_types = {'int', 'long', 'string', 'bool', 'float'}
+
+    @staticmethod
+    def create_field_info(field_name, field_def):
+        if field_def in Field.primitive_types:
+            return FieldPrimitive(field_name, field_def)
+        match_list = Field.re_list.match(field_def)
+        if match_list:
+            return FieldList(field_name, field_def, match_list)
+        match_dict = Field.re_dict.match(field_def)
+        if match_dict:
+            return FieldDictionary(field_name, field_def, match_dict)
+        match_struct = Field.re_struct.match(field_def)
+        if match_struct:
+            return FieldStruct(field_name, field_def, match_struct)
+        match_enum = Field.re_enum.match(field_def)
+        if match_enum:
+            return FieldEnum(field_name, field_def, match_enum)
 
     def __init__(self, field_name, field_def):
         self.field_name = field_name
         self.field_def = field_def
 
-        self.isPrimitive = True
-        self.isList = False
-        self.isDictionary = False
-        self.isStruct = False
-        self.type_args = None
 
-        # 正则匹配
-        if self.isPrimitive:
-            match = self.re_list.match(self.field_def)
-            if match:
-                self.isPrimitive = False
-                self.isList = True
-                self.type_args = []
-                self.type_args.append(match.group(1))
+class FieldPrimitive(Field):
 
-        if self.isPrimitive:
-            match = self.re_dict.match(self.field_def)
-            if match:
-                self.isPrimitive = False
-                self.isDictionary = True
-                self.type_args = []
-                self.type_args.append(match.group(1))
-                self.type_args.append(match.group(2))
+    def __init__(self, field_name, field_def):
+        super().__init__(field_name, field_def)
 
-        if self.isPrimitive:
-            match = self.re_struct.match(self.field_def)
-            if match:
-                self.isPrimitive = False
-                self.isStruct = True
-                self.type_args = []
-                self.type_args.append(match.group(1))
+
+class FieldList(Field):
+    def __init__(self, field_name, field_def, reg_match):
+        super().__init__(field_name, field_def)
+        self.type_args = []
+        self.type_args.append(reg_match.group(1))
+
+
+class FieldDictionary(Field):
+    def __init__(self, field_name, field_def, reg_match):
+        super().__init__(field_name, field_def)
+        self.type_args = []
+        self.type_args.append(reg_match.group(1))
+        self.type_args.append(reg_match.group(2))
+
+
+class FieldStruct(Field):
+    def __init__(self, field_name, field_def, reg_match):
+        super().__init__(field_name, field_def)
+        self.type_args = []
+        self.type_args.append(reg_match.group(1))
+
+
+class FieldEnum(Field):
+    def __init__(self, field_name, field_def, reg_match):
+        super().__init__(field_name, field_def)
 
 
 class Scheme:
@@ -94,7 +115,7 @@ class Table:
                     field_defs = self.try_read_field_defs(row)
                     continue
                 fields = zip(field_names, field_defs)
-                fields = [Field(*field) for field in fields]
+                fields = [Field.create_field_info(*field) for field in fields]
 
                 self.scheme = Scheme(name, fields)
 
@@ -129,17 +150,22 @@ class Table:
         data.append(row_data)
 
     def append_cell(self, row, cell, field):
-        if field.isPrimitive:
+        if isinstance(field, FieldPrimitive):
             row.append(self.to_safe_str(cell))
-        elif field.isList:
+        elif isinstance(field, FieldList):
             # row.append(str(str.count(cell, ',') + 1))
             row.append(self.to_safe_str(cell))
-        elif field.isDictionary:
+        elif isinstance(field, FieldDictionary):
             # row.append(str((str.count(cell, ',') + 1) // 2))
             row.append(self.to_safe_str(cell))
-        else:
+        elif isinstance(field, FieldStruct):
             # struct ?
             row.append(self.to_safe_str(cell))
+        elif isinstance(field, FieldEnum):
+            # enum ?
+            row.append(self.to_safe_str(cell))
+        else:
+            raise Exception('syntax error:' + field.field_def)
 
 
 class BaseConverter:
@@ -195,7 +221,7 @@ class BaseConverter:
         self.file_ext = ""
 
     def ensure_path(self, path):
-        file_dir = os.path.split(path)[0]
+        file_dir = os.path.dirname(path)
         if not os.path.isdir(file_dir):
             os.makedirs(file_dir)
 
@@ -245,7 +271,7 @@ class BaseConverter:
             "field_type": field.field_def,
             "field_type_reader": self.get_primitive_reader(field.field_def),
             "index": index}
-        if field.type_args is not None:
+        if hasattr(field, 'type_args') and field.type_args is not None:
             if len(field.type_args) > 0:
                 field_args.update({
                     "type_arg_1": self.get_primitive_type_name(field.type_args[0]),
@@ -254,13 +280,13 @@ class BaseConverter:
                 field_args.update({
                     "type_arg_2": self.get_primitive_type_name(field.type_args[1]),
                     "type_arg_2_reader": self.get_primitive_reader(field.type_args[1])})
-        if field.isPrimitive:
+        if isinstance(field, FieldPrimitive):
             return template["field_ctor_primitive"].format(**field_args)
-        elif field.isList:
+        elif isinstance(field, FieldList):
             return template["field_ctor_list"].format(**field_args)
-        elif field.isDictionary:
+        elif isinstance(field, FieldDictionary):
             return template["field_ctor_dictionary"].format(**field_args)
-        elif field.isStruct:
+        elif isinstance(field, FieldStruct):
             return template["field_ctor_struct"].format(**field_args)
 
         return ""
@@ -270,10 +296,10 @@ class BaseConverter:
         for row in table.data:
             for index, cell in enumerate(row):
                 field = fields[index]
-                if field.isList:
+                if isinstance(field, FieldList):
                     prefix = str(str.count(cell, ',') + 1)
                     row[index] = prefix + ',' + cell
-                elif field.isDictionary:
+                elif isinstance(field, FieldDictionary):
                     prefix = str((str.count(cell, ',') + 1) // 2)
                     row[index] = prefix + ',' + cell
         data_arr = [str.join(",", row) for row in table.data]

@@ -201,7 +201,7 @@ class CSharpConverter(easy_converter.BaseConverter):
         self.file_ext = ".cs"
 
     def get_type_name(self, field):
-        if field.isStruct:
+        if isinstance(field, easy_converter.FieldStruct):
             return "object"
         return field.field_def.replace("Map", "Dictionary")
 

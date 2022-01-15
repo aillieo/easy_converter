@@ -37,16 +37,16 @@ class LuaConverter(easy_converter.BaseConverter):
         self.file_ext = ".lua"
 
     def value_to_string(self, value, field):
-        if field.isList:
+        if isinstance(field, easy_converter.FieldList):
             return '{' + value + '}'
-        if field.isDictionary:
+        if isinstance(field, easy_converter.FieldDictionary):
             value_list = str.split(value, ',')
             data = []
             for index in range(len(value_list) // 2):
                 one_data = value_list[index * 2] + '=' + (value_list[index * 2 + 1])
                 data.append(one_data)
             return '{' + ','.join(data) + '}'
-        if field.isPrimitive:
+        if isinstance(field, easy_converter.FieldPrimitive):
             if field.field_def == 'string':
                 return "'" + value + "'"
         return value
