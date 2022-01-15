@@ -17,16 +17,19 @@ class FieldType(Enum):
 
 
 class Field:
-    re_list = re.compile(r"List<(\w+)>")
-    re_dict = re.compile(r"Map<(\w+),(\w+)>")
-    re_struct = re.compile(r"Struct<([\w\(\w\),]+)>")
-    re_enum = re.compile(r"Enum<([\w\(\d\),]+)>")
-    primitive_types = {'int', 'long', 'string', 'bool', 'float'}
+    re_primitive = re.compile(r"^(int|long|string|float|bool)$")
+    re_list = re.compile(r"^List<(\w+)>$")
+    re_dict = re.compile(r"^Map<(\w+),(\w+)>$")
+    re_struct = re.compile(r"^Struct<(\w+,\w+)(?:,(\w+,\w+))*>$")
+    re_enum = re.compile(r"^Enum<(\w+,\d+)(?:,(\w+,\d+))*>$")
+    re_struct_list = re.compile(r"^List<Struct<(\w+,\w+)(?:,(\w+,\w+))*>>$")
+    re_struct_dict = re.compile(r"^Map<(\w+),Struct<(\w+,\w+)(?:,(\w+,\w+))*>>$")
 
     @staticmethod
     def create_field_info(field_name, field_def):
-        if field_def in Field.primitive_types:
-            return FieldPrimitive(field_name, field_def)
+        match_primitive = Field.re_primitive.match(field_def)
+        if match_primitive:
+            return FieldPrimitive(field_name, field_def, match_primitive)
         match_list = Field.re_list.match(field_def)
         if match_list:
             return FieldList(field_name, field_def, match_list)
@@ -39,6 +42,13 @@ class Field:
         match_enum = Field.re_enum.match(field_def)
         if match_enum:
             return FieldEnum(field_name, field_def, match_enum)
+        match_struct_list = Field.re_struct_list.match(field_def)
+        if match_struct_list:
+            return FieldStructList(field_name, field_def, match_struct_list)
+        match_struct_dict = Field.re_struct_dict.match(field_def)
+        if match_struct_dict:
+            return FieldStructDictionary(field_name, field_def, match_struct_dict)
+        raise Exception('invalid def' + field_def)
 
     def __init__(self, field_name, field_def):
         self.field_name = field_name
@@ -47,8 +57,9 @@ class Field:
 
 class FieldPrimitive(Field):
 
-    def __init__(self, field_name, field_def):
+    def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def)
+        self.field_type = {reg_match.group(1)}
 
 
 class FieldList(Field):
@@ -56,6 +67,7 @@ class FieldList(Field):
         super().__init__(field_name, field_def)
         self.type_args = []
         self.type_args.append(reg_match.group(1))
+        self.list_element_type = reg_match.group(1)
 
 
 class FieldDictionary(Field):
@@ -64,18 +76,44 @@ class FieldDictionary(Field):
         self.type_args = []
         self.type_args.append(reg_match.group(1))
         self.type_args.append(reg_match.group(2))
+        self.dict_key_type = reg_match.group(1)
+        self.dict_value_type = reg_match.group(2)
 
 
 class FieldStruct(Field):
     def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def)
-        self.type_args = []
-        self.type_args.append(reg_match.group(1))
+        self.struct_fields = []
+        print("FieldStruct " + field_def)
+        for g in reg_match.groups():
+            print(g)
 
 
 class FieldEnum(Field):
     def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def)
+        self.struct_fields = []
+        print("FieldEnum " + field_def)
+        for g in reg_match.groups():
+            print(g)
+
+
+class FieldStructDictionary(FieldDictionary):
+    def __init__(self, field_name, field_def, reg_match):
+        super().__init__(field_name, field_def, reg_match)
+        self.struct_fields = []
+        print("FieldStructDictionary " + field_def)
+        for g in reg_match.groups():
+            print(g)
+
+
+class FieldStructList(FieldList):
+    def __init__(self, field_name, field_def, reg_match):
+        super().__init__(field_name, field_def, reg_match)
+        self.struct_fields = []
+        print("FieldStructList " + field_def)
+        for g in reg_match.groups():
+            print(g)
 
 
 class Scheme:
