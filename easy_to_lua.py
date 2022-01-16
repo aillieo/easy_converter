@@ -57,7 +57,7 @@ class LuaConverter(easy_converter.BaseConverter):
             field = scheme.fields[index]
             data.append(template_lua["value_entry"].format(
                 **{"field_name": field.field_name, "value_data": self.value_to_string(value, field)}))
-        return template_lua["row_entry"].format(**{"key":row[0], "row_data": ",".join(data)})
+        return template_lua["row_entry"].format(**{"key": row[0], "row_data": ",".join(data)})
 
     def convert_table(self, table, template, arg_list):
 
@@ -81,12 +81,13 @@ class LuaConverter(easy_converter.BaseConverter):
         text = template["manager"].format(**arg_list)
         self.write_config("TableManager" + self.file_ext, text)
 
-    def convert_miscs(self, template, arg_list):
+    def convert_struct(self, table, struct, template, arg_list):
         pass
 
+    def convert_enums(self, table, enum, template, arg_list):
+        print(table.scheme.name + enum.field_def)
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser()
     parser.add_argument("-source", type=str)
     parser.add_argument("-out", type=str, default='./out')

@@ -13,24 +13,24 @@ template_cs = {
 
     "field_ctor_list": '''
             int {field_name}Len = buffer.ReadInt();
-            this.{field_name} = new List<{type_arg_1}>();
+            this.{field_name} = new List<{list_element_type}>();
             for(int i = 0; i < {field_name}Len; ++i)
             {{
-                this.{field_name}.Add(buffer.{type_arg_1_reader}());
+                this.{field_name}.Add(buffer.{list_element_type_reader}());
             }}
         ''',
 
     "field_ctor_dictionary": '''
             int {field_name}Len = buffer.ReadInt();
-            this.{field_name} = new Dictionary<{type_arg_1},{type_arg_2}>();
+            this.{field_name} = new Dictionary<{dict_key_type},{dict_value_type}>();
             for(int i = 0; i < {field_name}Len; ++i)
             {{
-                this.{field_name}.Add(buffer.{type_arg_1_reader}(),buffer.{type_arg_2_reader}());
+                this.{field_name}.Add(buffer.{dict_key_type_reader}(),buffer.{dict_value_type_reader}());
             }}
         ''',
 
     "field_ctor_struct": '''
-            this.{field_name} = default;''',
+            this.{field_name} = new {struct_name}(buffer);''',
 
     "class": '''
 using System.Collections.Generic;
@@ -202,8 +202,12 @@ class CSharpConverter(easy_converter.BaseConverter):
 
     def get_type_name(self, field):
         if isinstance(field, easy_converter.FieldStruct):
-            return "object"
+            return "StructName0"
         return field.field_def.replace("Map", "Dictionary")
+
+    def convert_miscs(self, tables, template, arg_list):
+        text = template["buffer"].format(**arg_list)
+        self.write_config("DataBuffer" + self.file_ext, text)
 
 
 if __name__ == '__main__':

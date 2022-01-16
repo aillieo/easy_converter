@@ -65,17 +65,12 @@ class FieldPrimitive(Field):
 class FieldList(Field):
     def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def)
-        self.type_args = []
-        self.type_args.append(reg_match.group(1))
         self.list_element_type = reg_match.group(1)
 
 
 class FieldDictionary(Field):
     def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def)
-        self.type_args = []
-        self.type_args.append(reg_match.group(1))
-        self.type_args.append(reg_match.group(2))
         self.dict_key_type = reg_match.group(1)
         self.dict_value_type = reg_match.group(2)
 
@@ -84,15 +79,14 @@ class FieldStruct(Field):
     def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def)
         self.struct_fields = []
-        print("FieldStruct " + field_def)
         for g in reg_match.groups():
-            print(g)
+            self.struct_fields.append(str.split(g, ','))
 
 
 class FieldEnum(Field):
     def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def)
-        self.struct_fields = []
+        self.enum_values = []
         print("FieldEnum " + field_def)
         for g in reg_match.groups():
             print(g)
@@ -101,7 +95,6 @@ class FieldEnum(Field):
 class FieldStructDictionary(FieldDictionary):
     def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def, reg_match)
-        self.struct_fields = []
         print("FieldStructDictionary " + field_def)
         for g in reg_match.groups():
             print(g)
@@ -110,7 +103,6 @@ class FieldStructDictionary(FieldDictionary):
 class FieldStructList(FieldList):
     def __init__(self, field_name, field_def, reg_match):
         super().__init__(field_name, field_def, reg_match)
-        self.struct_fields = []
         print("FieldStructList " + field_def)
         for g in reg_match.groups():
             print(g)
@@ -122,6 +114,12 @@ class Scheme:
         self.full_name = name
         self.name = name
         self.fields = fields
+
+    def get_associated_structs(self):
+        return [x for x in self.fields if isinstance(x, FieldStruct)]
+
+    def get_associated_enums(self):
+        return [x for x in self.fields if isinstance(x, FieldEnum)]
 
 
 class Table:
@@ -160,8 +158,7 @@ class Table:
             self.append_row(data, row)
 
         if self.scheme is None:
-            print("invalid xlsx file")
-            return
+            raise Exception("invalid sheet file" + sheet.title)
         if len(data) > 0:
             self.data = data
 
@@ -202,6 +199,12 @@ class Table:
         elif isinstance(field, FieldEnum):
             # enum ?
             row.append(self.to_safe_str(cell))
+        elif isinstance(field, FieldStructList):
+            # struct list ?
+            row.append(self.to_safe_str(cell))
+        elif isinstance(field, FieldStructDictionary):
+            # struct map ?
+            row.append(self.to_safe_str(cell))
         else:
             raise Exception('syntax error:' + field.field_def)
 
@@ -225,6 +228,7 @@ class BaseConverter:
         'field_ctor_list': '',
         'field_ctor_dictionary': '',
         'field_ctor_struct': '',
+        'field_ctor_enum': '',
 
         # 2.4. field tostring method
         'field_to_string': '',
@@ -309,15 +313,17 @@ class BaseConverter:
             "field_type": field.field_def,
             "field_type_reader": self.get_primitive_reader(field.field_def),
             "index": index}
-        if hasattr(field, 'type_args') and field.type_args is not None:
-            if len(field.type_args) > 0:
-                field_args.update({
-                    "type_arg_1": self.get_primitive_type_name(field.type_args[0]),
-                    "type_arg_1_reader": self.get_primitive_reader(field.type_args[0])})
-            if len(field.type_args) > 1:
-                field_args.update({
-                    "type_arg_2": self.get_primitive_type_name(field.type_args[1]),
-                    "type_arg_2_reader": self.get_primitive_reader(field.type_args[1])})
+        if isinstance(field, FieldList):
+            field_args.update({
+                "list_element_type": self.get_primitive_type_name(field.list_element_type),
+                "list_element_type_reader": self.get_primitive_reader(field.list_element_type)})
+        if isinstance(field, FieldDictionary):
+            field_args.update({
+                "dict_key_type": self.get_primitive_type_name(field.dict_key_type),
+                "dict_key_type_reader": self.get_primitive_reader(field.dict_key_type)})
+            field_args.update({
+                "dict_value_type": self.get_primitive_type_name(field.dict_value_type),
+                "dict_value_type_reader": self.get_primitive_reader(field.dict_value_type)})
         if isinstance(field, FieldPrimitive):
             return template["field_ctor_primitive"].format(**field_args)
         elif isinstance(field, FieldList):
@@ -325,7 +331,11 @@ class BaseConverter:
         elif isinstance(field, FieldDictionary):
             return template["field_ctor_dictionary"].format(**field_args)
         elif isinstance(field, FieldStruct):
+            field_args.update({
+                "struct_name": "StructName0"})
             return template["field_ctor_struct"].format(**field_args)
+        elif isinstance(field, FieldEnum):
+            return template["field_ctor_enum"].format(**field_args)
 
         return ""
 
@@ -369,10 +379,13 @@ class BaseConverter:
 
         self.convert_manager(tables, template, arg_list)
 
-        self.convert_miscs(template, arg_list)
+        for table in tables:
+            for struct in table.scheme.get_associated_structs():
+                self.convert_struct(table, struct, template, arg_list)
+            for enum in table.scheme.get_associated_enums():
+                self.convert_struct(table, enum, template, arg_list)
 
-        # text5 = template["test"].format(**arg_list)
-        # self.write_config("TestCase" + self.file_ext, text5)
+        self.convert_miscs(tables, template, arg_list)
 
     def convert_table(self, table, template, arg_list):
 
@@ -432,9 +445,11 @@ class BaseConverter:
         text = template["manager"].format(**arg_list)
         self.write_config("TableManager" + self.file_ext, text)
 
-    def convert_miscs(self, template, arg_list):
-        self.convert_buffer(template, arg_list)
+    def convert_struct(self, table, struct, template, arg_list):
+        print(table.scheme.name + struct.field_def)
 
-    def convert_buffer(self, template, arg_list):
-        text = template["buffer"].format(**arg_list)
-        self.write_config("DataBuffer" + self.file_ext, text)
+    def convert_enums(self, table, enum, template, arg_list):
+        print(table.scheme.name + enum.field_def)
+
+    def convert_miscs(self, tables, template, arg_list):
+        pass

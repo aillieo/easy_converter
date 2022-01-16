@@ -13,19 +13,19 @@ template_java = {
 
     "field_ctor_list": '''
         int {field_name}Len = buffer.ReadInt();
-        this.{field_name} = new ArrayList<{type_arg_1}>();
+        this.{field_name} = new ArrayList<{list_element_type}>();
         for(int i = 0; i < {field_name}Len; ++i)
         {{
-            this.{field_name}.add(buffer.{type_arg_1_reader}());
+            this.{field_name}.add(buffer.{list_element_type_reader}());
         }}
         ''',
 
     "field_ctor_dictionary": '''
         int {field_name}Len = buffer.ReadInt();
-        this.{field_name} = new HashMap<{type_arg_1},{type_arg_2}>();
+        this.{field_name} = new HashMap<{dict_key_type},{dict_value_type}>();
         for(int i = 0; i < {field_name}Len; ++i)
         {{
-            this.{field_name}.put(buffer.{type_arg_1_reader}(),buffer.{type_arg_2_reader}());
+            this.{field_name}.put(buffer.{dict_key_type_reader}(),buffer.{dict_value_type_reader}());
         }}
         ''',
 
@@ -224,14 +224,21 @@ class JavaConverter(easy_converter.BaseConverter):
             return "ReadBool"
         return type_def
 
-    def convert_miscs(self, template, arg_list):
-        easy_converter.BaseConverter.convert_miscs(self, template, arg_list)
+    def convert_struct(self, table, struct, template, arg_list):
+        print(table.scheme.name + struct.field_def)
+
+    def convert_enums(self, table, enum, template, arg_list):
+        print(table.scheme.name + enum.field_def)
+
+    def convert_miscs(self, tables, template, arg_list):
+        text = template["buffer"].format(**arg_list)
+        self.write_config("DataBuffer" + self.file_ext, text)
+
         self.convert_func(template, arg_list)
 
     def convert_func(self, template, arg_list):
         text = template["func"].format(**arg_list)
         self.write_config("FuncStr2Str" + self.file_ext, text)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
