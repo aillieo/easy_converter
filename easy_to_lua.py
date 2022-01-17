@@ -7,7 +7,7 @@ import easy_converter
 template_lua = {
     "value_entry": '''{field_name}={value_data}''',
     "row_entry": '''[{key}]={{{row_data}}}''',
-    "class": '''
+    "class_declare": '''
 local {table_name} = {{
 
 {table_data}
@@ -72,7 +72,7 @@ class LuaConverter(easy_converter.BaseConverter):
             "table_data": str.join(',\n', table_data),
         }
 
-        text0 = template["class"].format(**table_args)
+        text0 = template["class_declare"].format(**table_args)
 
         self.write_config("{0}{1}".format(table_name, self.file_ext), text0)
 

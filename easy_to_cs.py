@@ -5,7 +5,7 @@ import argparse
 import easy_converter
 
 template_cs = {
-    "field": '''
+    "field_declare": '''
         public readonly {field_type} {field_name};''',
 
     "field_ctor_primitive": '''
@@ -30,9 +30,12 @@ template_cs = {
         ''',
 
     "field_ctor_struct": '''
-            this.{field_name} = new {struct_name}(buffer);''',
+            this.{field_name} = new {field_type}(buffer);''',
 
-    "class": '''
+    "field_ctor_enum": '''
+            this.{field_name} = buffer.ReadEnum<{field_type}>();''',
+
+    "class_declare": '''
 using System.Collections.Generic;
 
 {name_space_begin}
@@ -50,10 +53,41 @@ using System.Collections.Generic;
         {{
             return $"{fields_to_string}";
         }}
+
+{class_internal_types}
+
     }}
 
 {name_space_end}
 
+''',
+    "class_internal_struct_declare":
+        '''
+        public class {internal_struct_name}
+        {{
+{fields}
+
+            public {internal_struct_name}(DataBuffer buffer)
+            {{
+                {fields_construct}
+            }}
+
+            public override string ToString()
+            {{
+                return $"{fields_to_string}";
+            }}
+        }}
+''',
+    "class_internal_enum_declare":
+        '''
+        public enum {internal_enum_name}
+        {{
+{enum_values}
+        }}
+''',
+    "class_internal_enum_value":
+        '''
+            {enum_name} = {enum_value},
 ''',
     "field_to_string":
         ''' {field_name}={{{field_name}}} ''',
@@ -129,6 +163,7 @@ using System;
 ''',
     "buffer": '''
 using System.Collections.Generic;
+using System;
 
 {name_space_begin}
 
@@ -186,6 +221,17 @@ using System.Collections.Generic;
             return ret;
         }}
 
+        public T ReadEnum<T>() where T : struct
+        {{
+            string name = ReadString();
+            if (Enum.TryParse(name, out T e))
+            {{
+                return e;
+            }}
+
+            throw new Exception($"invalid enum name for {{typeof(T).Name}}: {{name}}");
+        }}
+
     }}
 
 {name_space_end}
@@ -201,9 +247,11 @@ class CSharpConverter(easy_converter.BaseConverter):
         self.file_ext = ".cs"
 
     def get_type_name(self, field):
-        if isinstance(field, easy_converter.FieldStruct):
-            return "StructName0"
-        return field.field_def.replace("Map", "Dictionary")
+        if isinstance(field, easy_converter.FieldList):
+            return f"List<{self.get_type_name(field.list_element_type)}>"
+        elif isinstance(field, easy_converter.FieldDictionary):
+            return f"Dictionary<{self.get_type_name(field.dict_key_type)},{self.get_type_name(field.dict_value_type)}>"
+        return field.field_def
 
     def convert_miscs(self, tables, template, arg_list):
         text = template["buffer"].format(**arg_list)

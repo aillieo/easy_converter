@@ -58,7 +58,7 @@ class FieldParser:
         self.field_def = field_def
         self.tokens = self.tokenize()
         self.cursor = 0
-        self.field_info = self.parse_field_info()
+        self.field_info = self.parse_field_info(self.field_name)
         if self.cursor != len(self.tokens):
             raise Exception("")
 
@@ -66,58 +66,59 @@ class FieldParser:
         print(self.field_def)
         return [Token(t) for t in self.re_token.findall(self.field_def)]
 
-    def parse_field_info(self):
+    def parse_field_info(self, field_name):
         if self.cursor >= len(self.tokens):
             raise Exception("")
         token = self.tokens[self.cursor]
         if token.token_type == TokenType.PrimitiveType:
-            return self.parse_primitive()
+            return self.parse_primitive(field_name)
         elif token.token_type == TokenType.BeginList:
-            return self.parse_list()
+            return self.parse_list(field_name)
         elif token.token_type == TokenType.BeginDictionary:
-            return self.parse_dictionary()
+            return self.parse_dictionary(field_name)
         elif token.token_type == TokenType.BeginStruct:
-            return self.parse_struct()
+            return self.parse_struct(field_name)
         elif token.token_type == TokenType.BeginEnum:
-            return self.parse_enum()
+            return self.parse_enum(field_name)
         raise Exception(token.token_type)
 
-    def parse_primitive(self):
+    def parse_primitive(self, field_name):
         token = self.tokens[self.cursor]
         self.cursor += 1
-        return FieldPrimitive('', token.value)
+        return FieldPrimitive(field_name, token.value)
 
-    def parse_list(self):
+    def parse_list(self, field_name):
         self.cursor += 1
-        element_type = self.parse_field_info()
+        element_type = self.parse_field_info('')
         token = self.tokens[self.cursor]
         assert token.token_type == TokenType.ClosingBracket
         self.cursor += 1
-        return FieldList('', '', element_type)
+        return FieldList(field_name, element_type)
 
-    def parse_dictionary(self):
+    def parse_dictionary(self, field_name):
         self.cursor += 1
-        key_type = self.parse_field_info()
+        key_type = self.parse_field_info('')
         token = self.tokens[self.cursor]
         assert token.token_type == TokenType.Comma
         self.cursor += 1
-        value_type = self.parse_field_info()
+        value_type = self.parse_field_info('')
         token = self.tokens[self.cursor]
         assert token.token_type == TokenType.ClosingBracket
         self.cursor += 1
-        return FieldDictionary('', '', key_type, value_type)
+        return FieldDictionary(field_name, key_type, value_type)
 
-    def parse_struct(self):
+    def parse_struct(self, field_name):
         self.cursor += 1
         struct_fields = []
         while True:
-            struct_fields.append(self.parse_field_info())
+            field_info = self.parse_field_info('')
+            struct_fields.append(field_info)
             token = self.tokens[self.cursor]
             assert token.token_type == TokenType.Comma
             self.cursor += 1
             token = self.tokens[self.cursor]
             assert token.token_type == TokenType.VariableName
-            struct_fields.append(token.value)
+            field_info.field_name = token.value
             self.cursor += 1
             token = self.tokens[self.cursor]
             if token.token_type == TokenType.ClosingBracket:
@@ -128,19 +129,23 @@ class FieldParser:
         token = self.tokens[self.cursor]
         assert token.token_type == TokenType.ClosingBracket
         self.cursor += 1
-        return FieldStruct('', struct_fields, None)
+        return FieldStruct(self.table_name, field_name, struct_fields)
 
-    def parse_enum(self):
+    def parse_enum(self, field_name):
         self.cursor += 1
         enum_values = []
         while True:
             token = self.tokens[self.cursor]
             assert token.token_type == TokenType.VariableName
-            enum_values.append(token.value)
+            enum_name = token.value
+            self.cursor += 1
+            token = self.tokens[self.cursor]
+            assert token.token_type == TokenType.Comma
             self.cursor += 1
             token = self.tokens[self.cursor]
             assert token.token_type == TokenType.Number
-            enum_values.append(token.value)
+            enum_value = token.value
+            enum_values.append({"enum_name": enum_name, "enum_value": enum_value})
             self.cursor += 1
             token = self.tokens[self.cursor]
             if token.token_type == TokenType.ClosingBracket:
@@ -151,103 +156,52 @@ class FieldParser:
         token = self.tokens[self.cursor]
         assert token.token_type == TokenType.ClosingBracket
         self.cursor += 1
-        return FieldEnum('', enum_values, None)
+        return FieldEnum(self.table_name, field_name, enum_values)
 
     def get_field_info(self):
         return self.field_info
 
 
 class Field:
-    re_primitive = re.compile(r"^(int|long|string|float|bool)$")
-    re_list = re.compile(r"^List<(\w+)>$")
-    re_dict = re.compile(r"^Map<(\w+),(\w+)>$")
-    re_struct = re.compile(r"^Struct<(\w+,\w+)(?:,(\w+,\w+))*>$")
-    re_enum = re.compile(r"^Enum<(\w+,\d+)(?:,(\w+,\d+))*>$")
-
-    re_struct_list = re.compile(r"^List<Struct<(\w+,\w+)(?:,(\w+,\w+))*>>$")
-    re_struct_dict = re.compile(r"^Map<(\w+),Struct<(\w+,\w+)(?:,(\w+,\w+))*>>$")
-
-    @staticmethod
-    def create_field_info(field_name, field_def):
-        match_primitive = Field.re_primitive.match(field_def)
-        if match_primitive:
-            return FieldPrimitive(field_name, field_def)
-        match_list = Field.re_list.match(field_def)
-        if match_list:
-            return FieldList(field_name, field_def, match_list.group(1))
-        match_dict = Field.re_dict.match(field_def)
-        if match_dict:
-            return FieldDictionary(field_name, field_def, match_dict.group(1), match_dict.group(2))
-        match_struct = Field.re_struct.match(field_def)
-        if match_struct:
-            return FieldStruct(field_name, field_def, match_struct)
-        match_enum = Field.re_enum.match(field_def)
-        if match_enum:
-            return FieldEnum(field_name, field_def, match_enum)
-        match_struct_list = Field.re_struct_list.match(field_def)
-        if match_struct_list:
-            return FieldStructList(field_name, field_def, match_struct_list)
-        match_struct_dict = Field.re_struct_dict.match(field_def)
-        if match_struct_dict:
-            return FieldStructDictionary(field_name, field_def, match_struct_dict)
-        raise Exception('invalid def' + field_def)
-
     def __init__(self, field_name, field_def):
         self.field_name = field_name
         self.field_def = field_def
 
 
 class FieldPrimitive(Field):
-
-    def __init__(self, field_name, field_def):
-        super().__init__(field_name, field_def)
-        self.field_type = {field_def}
+    def __init__(self, field_name, field_type):
+        super().__init__(field_name, field_type)
 
 
 class FieldList(Field):
-    def __init__(self, field_name, field_def, element_type):
-        super().__init__(field_name, field_def)
+    def __init__(self, field_name, element_type):
+        super().__init__(field_name, '')
         self.list_element_type = element_type
 
 
 class FieldDictionary(Field):
-    def __init__(self, field_name, field_def, key_type, value_type):
-        super().__init__(field_name, field_def)
+    def __init__(self, field_name, key_type, value_type):
+        super().__init__(field_name, '')
         self.dict_key_type = key_type
         self.dict_value_type = value_type
 
 
 class FieldStruct(Field):
-    def __init__(self, field_name, field_def, reg_match):
+    def __init__(self, table_name, field_name, struct_fields):
+        field_def = field_name.capitalize()
+        if field_def == field_name:
+            field_def = 'S' + field_name
         super().__init__(field_name, field_def)
-        self.struct_fields = []
-        for g in reg_match.groups():
-            self.struct_fields.append(str.split(g, ','))
+        self.struct_fields = struct_fields
 
 
 class FieldEnum(Field):
-    def __init__(self, field_name, field_def, reg_match):
+    def __init__(self, table_name, field_name, enum_values):
+        field_def = field_name.capitalize()
+        if field_def == field_name:
+            field_def = 'E' + field_name
         super().__init__(field_name, field_def)
-        self.enum_values = []
-        print("FieldEnum " + field_def)
-        for g in reg_match.groups():
-            print(g)
-
-
-class FieldStructDictionary(FieldDictionary):
-    def __init__(self, field_name, field_def, reg_match):
-        super().__init__(field_name, field_def, reg_match)
-        print("FieldStructDictionary " + field_def)
-        for g in reg_match.groups():
-            print(g)
-
-
-class FieldStructList(FieldList):
-    def __init__(self, field_name, field_def, reg_match):
-        super().__init__(field_name, field_def, reg_match)
-        print("FieldStructList " + field_def)
-        for g in reg_match.groups():
-            print(g)
+        self.enum_values = enum_values
 
 
 class Scheme:
@@ -272,7 +226,7 @@ class Table:
 
     def __init__(self, sheet):
 
-        name = sheet.title
+        table_name = sheet.title
 
         data = []
         self.scheme = None
@@ -292,10 +246,11 @@ class Table:
                 if field_defs is None:
                     field_defs = self.try_read_field_defs(row)
                     continue
-                fields = zip(field_names, field_defs)
-                fields = [Field.create_field_info(*field) for field in fields]
+                pairs = zip(field_names, field_defs)
+                fields = [FieldParser(table_name, field_name, field_def).get_field_info()
+                          for field_name, field_def in pairs]
 
-                self.scheme = Scheme(name, fields)
+                self.scheme = Scheme(table_name, fields)
 
             self.append_row(data, row)
 
@@ -341,13 +296,8 @@ class Table:
         elif isinstance(field, FieldEnum):
             # enum ?
             row.append(self.to_safe_str(cell))
-        elif isinstance(field, FieldStructList):
-            # struct list ?
-            row.append(self.to_safe_str(cell))
-        elif isinstance(field, FieldStructDictionary):
-            # struct map ?
-            row.append(self.to_safe_str(cell))
         else:
+            print(field)
             raise Exception('syntax error:' + field.field_def)
 
 
@@ -360,10 +310,13 @@ class BaseConverter:
 
         # 2. Table class:
         # 2.1. Table body codes
-        'class': '',
+        'class_declare': '',
+        'class_internal_struct_declare': '',
+        'class_internal_enum_declare': '',
+        'class_internal_enum_value': '',
 
         # 2.2. field declaration
-        'field': '',
+        'field_declare': '',
 
         # 2.3. field constructor for different types
         'field_ctor_primitive': '',
@@ -446,26 +399,39 @@ class BaseConverter:
     def get_primitive_type_name(self, field_def):
         return field_def
 
+    def get_field_reader(self, field_info):
+        if isinstance(field_info, FieldStruct):
+            return self.get_struct_reader(field_info.field_def)
+        elif isinstance(field_info, FieldEnum):
+            return self.get_enum_reader(field_info.field_def)
+        return self.get_primitive_reader(field_info.field_def)
+
     def get_primitive_reader(self, type_def):
         return "Read" + type_def.capitalize()
+
+    def get_struct_reader(self, type_def):
+        return "new " + type_def + "(buffer);"
+
+    def get_enum_reader(self, type_def):
+        return "ReadEnum<" + type_def + '>'
 
     def get_field_ctor(self, field, index, template):
         field_args = {
             "field_name": field.field_name,
             "field_type": field.field_def,
-            "field_type_reader": self.get_primitive_reader(field.field_def),
+            "field_type_reader": self.get_field_reader(field),
             "index": index}
         if isinstance(field, FieldList):
             field_args.update({
-                "list_element_type": self.get_primitive_type_name(field.list_element_type),
-                "list_element_type_reader": self.get_primitive_reader(field.list_element_type)})
+                "list_element_type": self.get_primitive_type_name(field.list_element_type.field_def),
+                "list_element_type_reader": self.get_field_reader(field.list_element_type)})
         if isinstance(field, FieldDictionary):
             field_args.update({
-                "dict_key_type": self.get_primitive_type_name(field.dict_key_type),
-                "dict_key_type_reader": self.get_primitive_reader(field.dict_key_type)})
+                "dict_key_type": self.get_primitive_type_name(field.dict_key_type.field_def),
+                "dict_key_type_reader": self.get_field_reader(field.dict_key_type)})
             field_args.update({
-                "dict_value_type": self.get_primitive_type_name(field.dict_value_type),
-                "dict_value_type_reader": self.get_primitive_reader(field.dict_value_type)})
+                "dict_value_type": self.get_primitive_type_name(field.dict_value_type.field_def),
+                "dict_value_type_reader": self.get_field_reader(field.dict_value_type)})
         if isinstance(field, FieldPrimitive):
             return template["field_ctor_primitive"].format(**field_args)
         elif isinstance(field, FieldList):
@@ -473,8 +439,6 @@ class BaseConverter:
         elif isinstance(field, FieldDictionary):
             return template["field_ctor_dictionary"].format(**field_args)
         elif isinstance(field, FieldStruct):
-            field_args.update({
-                "struct_name": "StructName0"})
             return template["field_ctor_struct"].format(**field_args)
         elif isinstance(field, FieldEnum):
             return template["field_ctor_enum"].format(**field_args)
@@ -532,7 +496,7 @@ class BaseConverter:
     def convert_table(self, table, template, arg_list):
 
         table_name = table.scheme.name
-        fields = "\n".join([template["field"].format(
+        fields = "\n".join([template["field_declare"].format(
             **{"field_type": self.get_type_name(fld), "field_name": fld.field_name}) for fld in table.scheme.fields])
 
         fields_construct = ""
@@ -544,11 +508,38 @@ class BaseConverter:
             fields_to_string_list.append(template["field_to_string"].format(**{"field_name": fld.field_name}))
         fields_to_string = template["field_to_string_sep"].join(fields_to_string_list)
 
+        class_internal_types = ""
+        for idx, s in enumerate(table.scheme.get_associated_structs()):
+            s_fields = ""
+            s_fields_construct = ""
+            s_fields_to_string = ""
+            for s_idx, fld in enumerate(s.struct_fields):
+                s_fields += template["field_declare"].format(
+                    **{"field_type": self.get_type_name(fld), "field_name": fld.field_name})
+                s_fields += '\n'
+                s_fields_construct += self.get_field_ctor(fld, s_idx, template)
+            class_internal_types += template["class_internal_struct_declare"].format(**{
+                "internal_struct_name": s.field_def,
+                "fields": s_fields,
+                "fields_construct": s_fields_construct,
+                "fields_to_string": s_fields_to_string
+            })
+        for idx, e in enumerate(table.scheme.get_associated_enums()):
+            enum_values = ""
+            for f_idx, value in enumerate(e.enum_values):
+                enum_values += template["class_internal_enum_value"].format(**value)
+            class_internal_types += template["class_internal_enum_declare"].format(**{
+                "internal_enum_name": e.field_def,
+                "enum_values": enum_values,
+            })
+
         table_args = {
             "table_name": table_name,
             "fields": fields,
             "fields_construct": fields_construct,
-            "fields_to_string": fields_to_string}
+            "fields_to_string": fields_to_string,
+            "class_internal_types": class_internal_types
+        }
 
         table_args.update(arg_list)
 
@@ -568,7 +559,7 @@ class BaseConverter:
 
         arg_list["class_entry_getters"] += class_entry_getters
 
-        text0 = template["class"].format(**table_args)
+        text0 = template["class_declare"].format(**table_args)
 
         self.write_config("{0}{1}".format(table_name, self.file_ext), text0)
 

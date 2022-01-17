@@ -5,7 +5,7 @@ import argparse
 import easy_converter
 
 template_java = {
-    "field": '''
+    "field_declare": '''
     public final {field_type} {field_name};''',
 
     "field_ctor_primitive": '''
@@ -32,7 +32,7 @@ template_java = {
     "field_ctor_struct": '''
         this.{field_name} = null;''',
 
-    "class": '''{name_space_begin}
+    "class_declare": '''{name_space_begin}
 
 import java.util.HashMap;
 import java.util.ArrayList;
