@@ -7,13 +7,154 @@ from enum import Enum
 from openpyxl import load_workbook
 
 
-class FieldType(Enum):
-    Unknown = 0
-    Primitive = 1
-    List = 2
-    Dictionary = 3
-    Struct = 4
-    Enum = 5
+class TokenType(Enum):
+    PrimitiveType = 1 << 0
+    BeginList = 1 << 1
+    VariableName = 1 << 2
+    ClosingBracket = 1 << 3
+    BeginDictionary = 1 << 4
+    BeginStruct = 1 << 5
+    BeginEnum = 1 << 6
+    Number = 1 << 7
+    Comma = 1 << 8
+
+
+class Token:
+    primitive_types = ['int', 'long', 'string', 'float', 'bool']
+    value_to_token_types = {
+        'List<': TokenType.BeginList,
+        'Map<': TokenType.BeginDictionary,
+        'Struct<': TokenType.BeginStruct,
+        'Enum<': TokenType.BeginEnum,
+        '>': TokenType.ClosingBracket,
+        ',': TokenType.Comma,
+    }
+    re_variable_name = re.compile(r"^\w+\d*$")
+
+    def __init__(self, value):
+        self.value = value
+        self.token_type = None
+        if value in self.primitive_types:
+            self.token_type = TokenType.PrimitiveType
+            return
+        self.token_type = self.value_to_token_types.get(value)
+        if self.token_type is not None:
+            return
+        if str.isdigit(value):
+            self.token_type = TokenType.Number
+            return
+        if self.re_variable_name.match(value):
+            self.token_type = TokenType.VariableName
+            return
+        raise Exception(value)
+
+
+class FieldParser:
+    re_token = re.compile(r'[\d\w]+<?|[>,]')
+
+    def __init__(self, table_name, field_name, field_def):
+        self.table_name = table_name
+        self.field_name = field_name
+        self.field_def = field_def
+        self.tokens = self.tokenize()
+        self.cursor = 0
+        self.field_info = self.parse_field_info()
+        if self.cursor != len(self.tokens):
+            raise Exception("")
+
+    def tokenize(self):
+        print(self.field_def)
+        return [Token(t) for t in self.re_token.findall(self.field_def)]
+
+    def parse_field_info(self):
+        if self.cursor >= len(self.tokens):
+            raise Exception("")
+        token = self.tokens[self.cursor]
+        if token.token_type == TokenType.PrimitiveType:
+            return self.parse_primitive()
+        elif token.token_type == TokenType.BeginList:
+            return self.parse_list()
+        elif token.token_type == TokenType.BeginDictionary:
+            return self.parse_dictionary()
+        elif token.token_type == TokenType.BeginStruct:
+            return self.parse_struct()
+        elif token.token_type == TokenType.BeginEnum:
+            return self.parse_enum()
+        raise Exception(token.token_type)
+
+    def parse_primitive(self):
+        token = self.tokens[self.cursor]
+        self.cursor += 1
+        return FieldPrimitive('', token.value)
+
+    def parse_list(self):
+        self.cursor += 1
+        element_type = self.parse_field_info()
+        token = self.tokens[self.cursor]
+        assert token.token_type == TokenType.ClosingBracket
+        self.cursor += 1
+        return FieldList('', '', element_type)
+
+    def parse_dictionary(self):
+        self.cursor += 1
+        key_type = self.parse_field_info()
+        token = self.tokens[self.cursor]
+        assert token.token_type == TokenType.Comma
+        self.cursor += 1
+        value_type = self.parse_field_info()
+        token = self.tokens[self.cursor]
+        assert token.token_type == TokenType.ClosingBracket
+        self.cursor += 1
+        return FieldDictionary('', '', key_type, value_type)
+
+    def parse_struct(self):
+        self.cursor += 1
+        struct_fields = []
+        while True:
+            struct_fields.append(self.parse_field_info())
+            token = self.tokens[self.cursor]
+            assert token.token_type == TokenType.Comma
+            self.cursor += 1
+            token = self.tokens[self.cursor]
+            assert token.token_type == TokenType.VariableName
+            struct_fields.append(token.value)
+            self.cursor += 1
+            token = self.tokens[self.cursor]
+            if token.token_type == TokenType.ClosingBracket:
+                break
+            assert token.token_type == TokenType.Comma
+            self.cursor += 1
+
+        token = self.tokens[self.cursor]
+        assert token.token_type == TokenType.ClosingBracket
+        self.cursor += 1
+        return FieldStruct('', struct_fields, None)
+
+    def parse_enum(self):
+        self.cursor += 1
+        enum_values = []
+        while True:
+            token = self.tokens[self.cursor]
+            assert token.token_type == TokenType.VariableName
+            enum_values.append(token.value)
+            self.cursor += 1
+            token = self.tokens[self.cursor]
+            assert token.token_type == TokenType.Number
+            enum_values.append(token.value)
+            self.cursor += 1
+            token = self.tokens[self.cursor]
+            if token.token_type == TokenType.ClosingBracket:
+                break
+            assert token.token_type == TokenType.Comma
+            self.cursor += 1
+
+        token = self.tokens[self.cursor]
+        assert token.token_type == TokenType.ClosingBracket
+        self.cursor += 1
+        return FieldEnum('', enum_values, None)
+
+    def get_field_info(self):
+        return self.field_info
 
 
 class Field:
@@ -22,6 +163,7 @@ class Field:
     re_dict = re.compile(r"^Map<(\w+),(\w+)>$")
     re_struct = re.compile(r"^Struct<(\w+,\w+)(?:,(\w+,\w+))*>$")
     re_enum = re.compile(r"^Enum<(\w+,\d+)(?:,(\w+,\d+))*>$")
+
     re_struct_list = re.compile(r"^List<Struct<(\w+,\w+)(?:,(\w+,\w+))*>>$")
     re_struct_dict = re.compile(r"^Map<(\w+),Struct<(\w+,\w+)(?:,(\w+,\w+))*>>$")
 
@@ -29,13 +171,13 @@ class Field:
     def create_field_info(field_name, field_def):
         match_primitive = Field.re_primitive.match(field_def)
         if match_primitive:
-            return FieldPrimitive(field_name, field_def, match_primitive)
+            return FieldPrimitive(field_name, field_def)
         match_list = Field.re_list.match(field_def)
         if match_list:
-            return FieldList(field_name, field_def, match_list)
+            return FieldList(field_name, field_def, match_list.group(1))
         match_dict = Field.re_dict.match(field_def)
         if match_dict:
-            return FieldDictionary(field_name, field_def, match_dict)
+            return FieldDictionary(field_name, field_def, match_dict.group(1), match_dict.group(2))
         match_struct = Field.re_struct.match(field_def)
         if match_struct:
             return FieldStruct(field_name, field_def, match_struct)
@@ -57,22 +199,22 @@ class Field:
 
 class FieldPrimitive(Field):
 
-    def __init__(self, field_name, field_def, reg_match):
+    def __init__(self, field_name, field_def):
         super().__init__(field_name, field_def)
-        self.field_type = {reg_match.group(1)}
+        self.field_type = {field_def}
 
 
 class FieldList(Field):
-    def __init__(self, field_name, field_def, reg_match):
+    def __init__(self, field_name, field_def, element_type):
         super().__init__(field_name, field_def)
-        self.list_element_type = reg_match.group(1)
+        self.list_element_type = element_type
 
 
 class FieldDictionary(Field):
-    def __init__(self, field_name, field_def, reg_match):
+    def __init__(self, field_name, field_def, key_type, value_type):
         super().__init__(field_name, field_def)
-        self.dict_key_type = reg_match.group(1)
-        self.dict_value_type = reg_match.group(2)
+        self.dict_key_type = key_type
+        self.dict_value_type = value_type
 
 
 class FieldStruct(Field):
