@@ -53,10 +53,42 @@ public class {table_name}
 {fields_to_string}
                   "}}";
     }}
+    
+{class_internal_types}
+
 }}
 
 {name_space_end}
 
+''',
+    "class_internal_struct_declare":
+        '''
+        public class {internal_struct_name}
+        {{
+{fields}
+
+            public {internal_struct_name}(DataBuffer buffer)
+            {{
+                {fields_construct}
+            }}
+
+            @Override
+            public String toString()
+            {{
+                return "{fields_to_string}";
+            }}
+        }}
+''',
+    "class_internal_enum_declare":
+        '''
+        enum {internal_enum_name}
+        {{
+{enum_values}
+        }}
+''',
+    "class_internal_enum_value":
+        '''
+            {enum_name}({enum_value}),
 ''',
     "field_to_string":
         '''                  "{field_name}" + {field_name} + ''',
@@ -201,19 +233,23 @@ class JavaConverter(easy_converter.BaseConverter):
         self.file_ext = ".java"
 
     def get_type_name(self, field):
-        if isinstance(field, easy_converter.FieldStruct):
-            return "Object"
-        if field.field_def == "int":
-            return "Integer"
-        if field.field_def == "bool":
-            return "boolean"
-        if field.field_def == "string":
-            return "String"
-        return field.field_def.replace("Map", "HashMap").replace("List", "ArrayList").replace("int", "Integer").replace(
-            "string", "String")
+        if isinstance(field, easy_converter.FieldPrimitive):
+            if field.field_def == "int":
+                return "Integer"
+            if field.field_def == "bool":
+                return "boolean"
+            if field.field_def == "string":
+                return "String"
+            return field.field_def\
+                .replace("Map", "HashMap")\
+                .replace("List", "ArrayList")\
+                .replace("int", "Integer")\
+                .replace("string", "String")
+        return super().get_type_name(field)
 
     def get_primitive_type_name(self, field_def):
-        return field_def.replace("int", "Integer").replace("string", "String")
+        return field_def.replace("int", "Integer")\
+            .replace("string", "String")
 
     def get_primitive_reader(self, type_def):
         if type_def == "int":
@@ -224,11 +260,11 @@ class JavaConverter(easy_converter.BaseConverter):
             return "ReadBool"
         return type_def
 
-    def convert_struct(self, table, struct, template, arg_list):
-        print(table.scheme.name + struct.field_def)
+    def convert_structs(self, tables, template, arg_list):
+        pass
 
-    def convert_enums(self, table, enum, template, arg_list):
-        print(table.scheme.name + enum.field_def)
+    def convert_enums(self, tables, template, arg_list):
+        pass
 
     def convert_miscs(self, tables, template, arg_list):
         text = template["buffer"].format(**arg_list)
@@ -239,6 +275,7 @@ class JavaConverter(easy_converter.BaseConverter):
     def convert_func(self, template, arg_list):
         text = template["func"].format(**arg_list)
         self.write_config("FuncStr2Str" + self.file_ext, text)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

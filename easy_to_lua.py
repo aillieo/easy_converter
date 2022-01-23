@@ -7,8 +7,7 @@ import easy_converter
 template_lua = {
     "value_entry": '''{field_name}={value_data}''',
     "row_entry": '''[{key}]={{{row_data}}}''',
-    "class_declare": '''
-local {table_name} = {{
+    "class_declare": '''local {table_name} = {{
 
 {table_data}
 
@@ -17,15 +16,20 @@ local {table_name} = {{
 return {table_name}
 
 ''',
-    "manager": '''
-    local TableManager = {{}}
-    function TableManager.GetTable(tableName)
-        return require("{path_to_table}." .. tostring(table_name))
-    end
-    function TableManager.GetEntry(tableName, id)
-        return TableManager.GetTable(tableName)[id]
-    end
-    return TableManager
+    "manager": '''local TableManager = {{}}
+function TableManager.GetTable(tableName)
+    return require("{path_to_table}." .. tostring(table_name))
+end
+function TableManager.GetEntry(tableName, id)
+    return TableManager.GetTable(tableName)[id]
+end
+return TableManager
+''',
+    
+    "enums": '''local TableEnums = {{
+    {enum_data}
+}}
+return TableEnums
 '''
 }
 
@@ -49,6 +53,23 @@ class LuaConverter(easy_converter.BaseConverter):
         if isinstance(field, easy_converter.FieldPrimitive):
             if field.field_def == 'string':
                 return "'" + value + "'"
+            else:
+                return value
+        if isinstance(field, easy_converter.FieldStruct):
+            value_list = str.split(value, ',')
+            data = []
+            for idx, s_field in enumerate(field.struct_fields):
+                k = s_field.field_name
+                v = value_list[idx]
+                if s_field.field_def == "string":
+                    v = "'" + v + "'"
+                one_data = k + '=' + v
+                data.append(one_data)
+            return '{' + ','.join(data) + '}'
+        if isinstance(field, easy_converter.FieldEnum):
+            match_pair = next((p for p in field.enum_values if p.get("enum_name") == value), None)
+            if match_pair is not None:
+                return match_pair.get("enum_value")
         return value
 
     def pack_row_as_lua_table(self, row, scheme):
@@ -81,11 +102,28 @@ class LuaConverter(easy_converter.BaseConverter):
         text = template["manager"].format(**arg_list)
         self.write_config("TableManager" + self.file_ext, text)
 
-    def convert_struct(self, table, struct, template, arg_list):
+    def convert_structs(self, tables, template, arg_list):
         pass
 
-    def convert_enums(self, table, enum, template, arg_list):
-        print(table.scheme.name + enum.field_def)
+    def convert_enums(self, tables, template, arg_list):
+        text0 = ""
+        for table in tables:
+            associated_enums = table.scheme.get_associated_enums()
+            if len(associated_enums) > 0:
+                text0 += table.scheme.name + "={"
+                for enum in associated_enums:
+                    text0 += self.get_enum_def(enum.field_def, enum.enum_values)
+                    text0 += ","
+                text0 += "},"
+        arg_list.update({"enum_data": text0})
+        text = template["enums"].format(**arg_list)
+        self.write_config("TableEnums" + self.file_ext, text)
+
+    def get_enum_def(self, enum_name, enum_values):
+        data = []
+        for pair in enum_values:
+            data.append(pair.get("enum_name") + "=" + pair.get("enum_value"))
+        return enum_name + "={" + ",".join(data) + "}"
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

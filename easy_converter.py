@@ -7,6 +7,10 @@ from enum import Enum
 from openpyxl import load_workbook
 
 
+def upper_camel_case(var_name):
+    return var_name[0].upper() + var_name[1:]
+
+
 class TokenType(Enum):
     PrimitiveType = 1 << 0
     BeginList = 1 << 1
@@ -63,7 +67,7 @@ class FieldParser:
             raise Exception("")
 
     def tokenize(self):
-        print(self.field_def)
+        # print(self.field_def)
         return [Token(t) for t in self.re_token.findall(self.field_def)]
 
     def parse_field_info(self, field_name):
@@ -188,7 +192,7 @@ class FieldDictionary(Field):
 
 class FieldStruct(Field):
     def __init__(self, table_name, field_name, struct_fields):
-        field_def = field_name.capitalize()
+        field_def = upper_camel_case(field_name)
         if field_def == field_name:
             field_def = 'S' + field_name
         super().__init__(field_name, field_def)
@@ -197,7 +201,7 @@ class FieldStruct(Field):
 
 class FieldEnum(Field):
     def __init__(self, table_name, field_name, enum_values):
-        field_def = field_name.capitalize()
+        field_def = upper_camel_case(field_name)
         if field_def == field_name:
             field_def = 'E' + field_name
         super().__init__(field_name, field_def)
@@ -297,13 +301,11 @@ class Table:
             # enum ?
             row.append(self.to_safe_str(cell))
         else:
-            print(field)
             raise Exception('syntax error:' + field.field_def)
 
 
 class BaseConverter:
     default_template = {
-
         # 1. namespace text
         'name_space_begin': '',
         'name_space_end': '',
@@ -407,7 +409,7 @@ class BaseConverter:
         return self.get_primitive_reader(field_info.field_def)
 
     def get_primitive_reader(self, type_def):
-        return "Read" + type_def.capitalize()
+        return "Read" + upper_camel_case(type_def)
 
     def get_struct_reader(self, type_def):
         return "new " + type_def + "(buffer);"
@@ -485,11 +487,8 @@ class BaseConverter:
 
         self.convert_manager(tables, template, arg_list)
 
-        for table in tables:
-            for struct in table.scheme.get_associated_structs():
-                self.convert_struct(table, struct, template, arg_list)
-            for enum in table.scheme.get_associated_enums():
-                self.convert_struct(table, enum, template, arg_list)
+        self.convert_structs(tables, template, arg_list)
+        self.convert_enums(tables, template, arg_list)
 
         self.convert_miscs(tables, template, arg_list)
 
@@ -578,11 +577,11 @@ class BaseConverter:
         text = template["manager"].format(**arg_list)
         self.write_config("TableManager" + self.file_ext, text)
 
-    def convert_struct(self, table, struct, template, arg_list):
-        print(table.scheme.name + struct.field_def)
+    def convert_structs(self, tables, template, arg_list):
+        pass
 
-    def convert_enums(self, table, enum, template, arg_list):
-        print(table.scheme.name + enum.field_def)
+    def convert_enums(self, tables, template, arg_list):
+        pass
 
     def convert_miscs(self, tables, template, arg_list):
         pass
