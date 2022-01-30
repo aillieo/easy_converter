@@ -32,6 +32,9 @@ template_java = {
     "field_ctor_struct": '''
         this.{field_name} = null;''',
 
+    "field_ctor_enum": '''
+        this.{field_name} = new field_type(ReadInt());''',
+
     "class_declare": '''{name_space_begin}
 
 import java.util.HashMap;
@@ -84,6 +87,24 @@ public class {table_name}
         enum {internal_enum_name}
         {{
 {enum_values}
+            ;
+
+            public final int value;
+            {internal_enum_name}(int v)
+            {{
+                value = v;
+            }}
+
+            public static State valueOf(int v)
+            {{
+                switch (v)
+                {{
+                    {enum_values_lookup}
+
+                    default:
+                        throw new EnumConstantNotPresentException(State.class, Integer.toString(v));
+                }}
+            }}
         }}
 ''',
     "class_internal_enum_value":
@@ -240,15 +261,14 @@ class JavaConverter(easy_converter.BaseConverter):
                 return "boolean"
             if field.field_def == "string":
                 return "String"
-            return field.field_def\
-                .replace("Map", "HashMap")\
-                .replace("List", "ArrayList")\
-                .replace("int", "Integer")\
-                .replace("string", "String")
+        if isinstance(field, easy_converter.FieldList):
+            return f"ArrayList<{self.get_type_name(field.list_element_type)}>"
+        elif isinstance(field, easy_converter.FieldDictionary):
+            return f"HashMap<{self.get_type_name(field.dict_key_type)},{self.get_type_name(field.dict_value_type)}>"
         return super().get_type_name(field)
 
     def get_primitive_type_name(self, field_def):
-        return field_def.replace("int", "Integer")\
+        return field_def.replace("int", "Integer") \
             .replace("string", "String")
 
     def get_primitive_reader(self, type_def):

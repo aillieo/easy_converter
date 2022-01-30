@@ -18,14 +18,14 @@ return {table_name}
 ''',
     "manager": '''local TableManager = {{}}
 function TableManager.GetTable(tableName)
-    return require("{path_to_table}." .. tostring(table_name))
+    return require("{path_to_table}." .. tostring(tableName))
 end
 function TableManager.GetEntry(tableName, id)
     return TableManager.GetTable(tableName)[id]
 end
 return TableManager
 ''',
-    
+
     "enums": '''local TableEnums = {{
     {enum_data}
 }}
@@ -109,21 +109,24 @@ class LuaConverter(easy_converter.BaseConverter):
         text0 = ""
         for table in tables:
             associated_enums = table.scheme.get_associated_enums()
-            if len(associated_enums) > 0:
-                text0 += table.scheme.name + "={"
-                for enum in associated_enums:
-                    text0 += self.get_enum_def(enum.field_def, enum.enum_values)
-                    text0 += ","
+            for enum in associated_enums:
+                if text0 == "":
+                    text0 += table.scheme.name + "={"
+                text0 += self.get_enum_def(enum.field_def, enum.enum_values)
+                text0 += ","
+            if text0 != "":
                 text0 += "},"
-        arg_list.update({"enum_data": text0})
-        text = template["enums"].format(**arg_list)
-        self.write_config("TableEnums" + self.file_ext, text)
+        if text0 != "":
+            arg_list.update({"enum_data": text0})
+            text = template["enums"].format(**arg_list)
+            self.write_config("TableEnums" + self.file_ext, text)
 
     def get_enum_def(self, enum_name, enum_values):
         data = []
         for pair in enum_values:
             data.append(pair.get("enum_name") + "=" + pair.get("enum_value"))
         return enum_name + "={" + ",".join(data) + "}"
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

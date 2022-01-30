@@ -251,7 +251,7 @@ class CSharpConverter(easy_converter.BaseConverter):
             return f"List<{self.get_type_name(field.list_element_type)}>"
         elif isinstance(field, easy_converter.FieldDictionary):
             return f"Dictionary<{self.get_type_name(field.dict_key_type)},{self.get_type_name(field.dict_value_type)}>"
-        return field.field_def
+        return super().get_type_name(field)
 
     def convert_miscs(self, tables, template, arg_list):
         text = template["buffer"].format(**arg_list)

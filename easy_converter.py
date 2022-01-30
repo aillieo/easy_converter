@@ -8,6 +8,8 @@ from openpyxl import load_workbook
 
 
 def upper_camel_case(var_name):
+    if var_name == '':
+        return var_name
     return var_name[0].upper() + var_name[1:]
 
 
@@ -216,10 +218,10 @@ class Scheme:
         self.fields = fields
 
     def get_associated_structs(self):
-        return [x for x in self.fields if isinstance(x, FieldStruct)]
+        return (x for x in self.fields if isinstance(x, FieldStruct))
 
     def get_associated_enums(self):
-        return [x for x in self.fields if isinstance(x, FieldEnum)]
+        return (x for x in self.fields if isinstance(x, FieldEnum))
 
 
 class Table:
@@ -264,10 +266,10 @@ class Table:
             self.data = data
 
     def try_read_field_names(self, row):
-        return [str(x) for x in row if x is not None and x != '']
+        return (str(x) for x in row if x is not None and x != '')
 
     def try_read_field_defs(self, row):
-        return [str(x) for x in row if x is not None and x != '']
+        return (str(x) for x in row if x is not None and x != '')
 
     def to_safe_str(self, raw_str):
         if raw_str is None:
@@ -543,27 +545,19 @@ class BaseConverter:
         table_args.update(arg_list)
 
         class_ctor_functions = template["class_ctor"].format(**table_args)
-
         class_dict_entries = template["class_dict_entry"].format(**table_args)
-
         class_ctor_entries = template["class_ctor_entry"].format(**table_args)
-
         class_entry_getters = template["class_entry_getter"].format(**table_args)
 
         arg_list["class_dict_entries"] += class_dict_entries
-
         arg_list["class_ctor_entries"] += class_ctor_entries
-
         arg_list["class_ctor_functions"] += class_ctor_functions
-
         arg_list["class_entry_getters"] += class_entry_getters
 
         text0 = template["class_declare"].format(**table_args)
-
         self.write_config("{0}{1}".format(table_name, self.file_ext), text0)
 
         text1 = self.pack_table_data(table)
-
         self.write_config_data("{0}.txt".format(table_name), text1)
 
     def convert_manager(self, tables, template, arg_list):
