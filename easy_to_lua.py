@@ -2,7 +2,8 @@
 # -*- coding: UTF-8 -*-
 
 import argparse
-import easy_converter
+
+from easy_converter import *
 
 template_lua = {
     "value_entry": '''{field_name}={value_data}''',
@@ -34,28 +35,28 @@ return TableEnums
 }
 
 
-class LuaConverter(easy_converter.BaseConverter):
+class LuaWriter(TableWriter):
 
     def __init__(self, *args, **kwargs):
-        easy_converter.BaseConverter.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.file_ext = ".lua"
 
     def value_to_string(self, value, field):
-        if isinstance(field, easy_converter.FieldList):
+        if isinstance(field, FieldList):
             return '{' + value + '}'
-        if isinstance(field, easy_converter.FieldDictionary):
+        if isinstance(field, FieldDictionary):
             value_list = str.split(value, ',')
             data = []
             for index in range(len(value_list) // 2):
                 one_data = value_list[index * 2] + '=' + (value_list[index * 2 + 1])
                 data.append(one_data)
             return '{' + ','.join(data) + '}'
-        if isinstance(field, easy_converter.FieldPrimitive):
+        if isinstance(field, FieldPrimitive):
             if field.field_def == 'string':
                 return "'" + value + "'"
             else:
                 return value
-        if isinstance(field, easy_converter.FieldStruct):
+        if isinstance(field, FieldStruct):
             value_list = str.split(value, ',')
             data = []
             for idx, s_field in enumerate(field.struct_fields):
@@ -66,7 +67,7 @@ class LuaConverter(easy_converter.BaseConverter):
                 one_data = k + '=' + v
                 data.append(one_data)
             return '{' + ','.join(data) + '}'
-        if isinstance(field, easy_converter.FieldEnum):
+        if isinstance(field, FieldEnum):
             match_pair = next((p for p in field.enum_values if p.get("enum_name") == value), None)
             if match_pair is not None:
                 return match_pair.get("enum_value")
@@ -102,9 +103,6 @@ class LuaConverter(easy_converter.BaseConverter):
         text = template["manager"].format(**arg_list)
         self.write_config("TableManager" + self.file_ext, text)
 
-    def convert_structs(self, tables, template, arg_list):
-        pass
-
     def convert_enums(self, tables, template, arg_list):
         text0 = ""
         for table in tables:
@@ -127,6 +125,35 @@ class LuaConverter(easy_converter.BaseConverter):
             data.append(pair.get("enum_name") + "=" + pair.get("enum_value"))
         return enum_name + "={" + ",".join(data) + "}"
 
+    def convert(self, tables, template):
+
+        template, default_template = {}, template
+        template.update(default_template)
+
+        arg_list = {
+            "class_ctor_functions": "",
+            "class_dict_entries": "",
+            "class_ctor_entries": "",
+            "class_entry_getters": ""
+        }
+
+        name_space_args = {"name_space": self.name_space}
+        name_space_begin = ""
+        name_space_end = ""
+
+        arg_list["name_space_begin"] = name_space_begin
+        arg_list["name_space_end"] = name_space_end
+
+        for table in tables:
+            self.convert_table(table, template, arg_list)
+
+        self.convert_manager(tables, template, arg_list)
+
+        self.convert_enums(tables, template, arg_list)
+
+    def write_all(self, tables):
+        self.convert(tables, template_lua)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -136,5 +163,4 @@ if __name__ == '__main__':
     parser.add_argument("-namespace", type=str, default='easyConverter')
     parsed_args = vars(parser.parse_args())
 
-    converter = LuaConverter(**parsed_args)
-    converter.convert(template_lua)
+    EasyConverter.convert(TableReader(**parsed_args), LuaWriter(**parsed_args))

@@ -2,7 +2,8 @@
 # -*- coding: UTF-8 -*-
 
 import argparse
-import easy_converter
+
+from easy_converter import *
 
 template_java = {
     "field_declare": '''
@@ -110,6 +111,10 @@ public class {table_name}
     "class_internal_enum_value":
         '''
             {enum_name}({enum_value}),
+''',
+    "class_internal_enum_value_lookup":
+        '''
+            case {enum_value}: return {enum_name};
 ''',
     "field_to_string":
         '''                  "{field_name}" + {field_name} + ''',
@@ -247,25 +252,25 @@ public interface FuncStr2Str
 }
 
 
-class JavaConverter(easy_converter.BaseConverter):
+class JavaWriter(TableWriter):
 
     def __init__(self, *args, **kwargs):
-        easy_converter.BaseConverter.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.file_ext = ".java"
 
     def get_type_name(self, field):
-        if isinstance(field, easy_converter.FieldPrimitive):
+        if isinstance(field, FieldPrimitive):
             if field.field_def == "int":
                 return "Integer"
             if field.field_def == "bool":
                 return "boolean"
             if field.field_def == "string":
                 return "String"
-        if isinstance(field, easy_converter.FieldList):
+        if isinstance(field, FieldList):
             return f"ArrayList<{self.get_type_name(field.list_element_type)}>"
-        elif isinstance(field, easy_converter.FieldDictionary):
+        elif isinstance(field, FieldDictionary):
             return f"HashMap<{self.get_type_name(field.dict_key_type)},{self.get_type_name(field.dict_value_type)}>"
-        return super().get_type_name(field)
+        return field.field_def
 
     def get_primitive_type_name(self, field_def):
         return field_def.replace("int", "Integer") \
@@ -280,12 +285,6 @@ class JavaConverter(easy_converter.BaseConverter):
             return "ReadBool"
         return type_def
 
-    def convert_structs(self, tables, template, arg_list):
-        pass
-
-    def convert_enums(self, tables, template, arg_list):
-        pass
-
     def convert_miscs(self, tables, template, arg_list):
         text = template["buffer"].format(**arg_list)
         self.write_config("DataBuffer" + self.file_ext, text)
@@ -296,6 +295,158 @@ class JavaConverter(easy_converter.BaseConverter):
         text = template["func"].format(**arg_list)
         self.write_config("FuncStr2Str" + self.file_ext, text)
 
+    def get_field_reader(self, field_info):
+        if isinstance(field_info, FieldStruct):
+            return self.get_struct_reader(field_info.field_def)
+        elif isinstance(field_info, FieldEnum):
+            return self.get_enum_reader(field_info.field_def)
+        return self.get_primitive_reader(field_info.field_def)
+
+    def get_struct_reader(self, type_def):
+        return "new " + type_def + "(buffer);"
+
+    def get_enum_reader(self, type_def):
+        return "ReadEnum<" + type_def + '>'
+
+    def get_field_ctor(self, field, index, template):
+        field_args = {
+            "field_name": field.field_name,
+            "field_type": field.field_def,
+            "field_type_reader": self.get_field_reader(field),
+            "index": index}
+        if isinstance(field, FieldList):
+            field_args.update({
+                "list_element_type": self.get_primitive_type_name(field.list_element_type.field_def),
+                "list_element_type_reader": self.get_field_reader(field.list_element_type)})
+        if isinstance(field, FieldDictionary):
+            field_args.update({
+                "dict_key_type": self.get_primitive_type_name(field.dict_key_type.field_def),
+                "dict_key_type_reader": self.get_field_reader(field.dict_key_type)})
+            field_args.update({
+                "dict_value_type": self.get_primitive_type_name(field.dict_value_type.field_def),
+                "dict_value_type_reader": self.get_field_reader(field.dict_value_type)})
+        if isinstance(field, FieldPrimitive):
+            return template["field_ctor_primitive"].format(**field_args)
+        elif isinstance(field, FieldList):
+            return template["field_ctor_list"].format(**field_args)
+        elif isinstance(field, FieldDictionary):
+            return template["field_ctor_dictionary"].format(**field_args)
+        elif isinstance(field, FieldStruct):
+            return template["field_ctor_struct"].format(**field_args)
+        elif isinstance(field, FieldEnum):
+            return template["field_ctor_enum"].format(**field_args)
+
+        return ""
+
+    def convert(self, tables, template):
+
+        template, default_template = {}, template
+        template.update(default_template)
+
+        arg_list = {
+            "class_ctor_functions": "",
+            "class_dict_entries": "",
+            "class_ctor_entries": "",
+            "class_entry_getters": ""
+        }
+
+        name_space_args = {"name_space": self.name_space}
+        name_space_begin = template["name_space_begin"].format(**name_space_args)
+        name_space_end = template["name_space_end"].format(**name_space_args)
+
+        arg_list["name_space_begin"] = name_space_begin
+        arg_list["name_space_end"] = name_space_end
+
+        for table in tables:
+            self.convert_table(table, template, arg_list)
+
+        self.convert_manager(tables, template, arg_list)
+
+        self.convert_miscs(tables, template, arg_list)
+
+    def convert_table(self, table, template, arg_list):
+
+        table_name = table.scheme.name
+        fields = "\n".join([template["field_declare"].format(
+            **{"field_type": self.get_type_name(fld), "field_name": fld.field_name}) for fld in table.scheme.fields])
+
+        fields_construct = ""
+        for idx, fld in enumerate(table.scheme.fields):
+            fields_construct += self.get_field_ctor(fld, idx, template)
+
+        fields_to_string_list = []
+        for idx, fld in enumerate(table.scheme.fields):
+            fields_to_string_list.append(template["field_to_string"].format(**{"field_name": fld.field_name}))
+        fields_to_string = template["field_to_string_sep"].join(fields_to_string_list)
+
+        class_internal_types = ""
+        for idx, s in enumerate(table.scheme.get_associated_structs()):
+            s_fields = ""
+            s_fields_construct = ""
+            s_fields_to_string = ""
+            for s_idx, fld in enumerate(s.struct_fields):
+                s_fields += template["field_declare"].format(
+                    **{"field_type": self.get_type_name(fld), "field_name": fld.field_name})
+                s_fields += '\n'
+                s_fields_construct += self.get_field_ctor(fld, s_idx, template)
+            class_internal_types += template["class_internal_struct_declare"].format(**{
+                "internal_struct_name": s.field_def,
+                "fields": s_fields,
+                "fields_construct": s_fields_construct,
+                "fields_to_string": s_fields_to_string
+            })
+        for idx, e in enumerate(table.scheme.get_associated_enums()):
+            enum_values = ""
+            enum_values_lookup = ""
+            for f_idx, value in enumerate(e.enum_values):
+                enum_values += template["class_internal_enum_value"].format(**value)
+                enum_values_lookup += template["class_internal_enum_value_lookup"].format(**value)
+            class_internal_types += template["class_internal_enum_declare"].format(**{
+                "internal_enum_name": e.field_def,
+                "enum_values": enum_values,
+                "enum_values_lookup": enum_values_lookup
+            })
+
+        table_args = {
+            "table_name": table_name,
+            "fields": fields,
+            "fields_construct": fields_construct,
+            "fields_to_string": fields_to_string,
+            "class_internal_types": class_internal_types
+        }
+
+        table_args.update(arg_list)
+
+        class_ctor_functions = template["class_ctor"].format(**table_args)
+        class_dict_entries = template["class_dict_entry"].format(**table_args)
+        class_ctor_entries = template["class_ctor_entry"].format(**table_args)
+        class_entry_getters = template["class_entry_getter"].format(**table_args)
+
+        arg_list["class_dict_entries"] += class_dict_entries
+        arg_list["class_ctor_entries"] += class_ctor_entries
+        arg_list["class_ctor_functions"] += class_ctor_functions
+        arg_list["class_entry_getters"] += class_entry_getters
+
+        text0 = template["class_declare"].format(**table_args)
+        self.write_config("{0}{1}".format(table_name, self.file_ext), text0)
+
+        text1 = self.pack_table_data(table)
+        self.write_config_data("{0}.txt".format(table_name), text1)
+
+    def convert_manager(self, tables, template, arg_list):
+
+        arg_list.update({
+            "table_special_str_s": Table.special_str['\\,'],
+            "table_special_str_n": Table.special_str['\n']
+        })
+
+        arg_list["table_construct"] = ""
+        text = template["manager"].format(**arg_list)
+        self.write_config("TableManager" + self.file_ext, text)
+
+    def write_all(self, tables):
+        self.convert(tables, template_java)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -305,5 +456,4 @@ if __name__ == '__main__':
     parser.add_argument("-namespace", type=str, default='easyConverter')
     parsed_args = vars(parser.parse_args())
 
-    converter = JavaConverter(**parsed_args)
-    converter.convert(template_java)
+    EasyConverter.convert(TableReader(**parsed_args), JavaWriter(**parsed_args))
