@@ -5,9 +5,8 @@ import re
 from abc import ABC
 from abc import abstractmethod
 from enum import Enum
-
 from openpyxl import load_workbook
-
+from argparse import ArgumentParser
 
 def upper_camel_case(var_name):
     if var_name == '':
@@ -263,7 +262,7 @@ class Table:
             self.append_row(data, row)
 
         if self.scheme is None:
-            raise Exception("invalid sheet file" + sheet.title)
+            raise Exception("invalid sheet file: " + sheet.title)
         if len(data) > 0:
             self.data = data
 
@@ -293,10 +292,8 @@ class Table:
         if isinstance(field, FieldPrimitive):
             row.append(self.to_safe_str(cell))
         elif isinstance(field, FieldList):
-            # row.append(str(str.count(cell, ',') + 1))
             row.append(self.to_safe_str(cell))
         elif isinstance(field, FieldDictionary):
-            # row.append(str((str.count(cell, ',') + 1) // 2))
             row.append(self.to_safe_str(cell))
         elif isinstance(field, FieldStruct):
             # struct ?
@@ -338,7 +335,7 @@ class TableWriter(ABC):
         self.path_out = kwargs.get("out") or './out'
         self.path_out_data = kwargs.get("outdata") or './out_data'
         self.name_space = kwargs.get("namespace") or 'EasyConverter'
-        self.file_ext = ""
+        self.file_ext = self.get_script_file_ext()
 
     def ensure_path(self, path):
         file_dir = os.path.dirname(path)
@@ -346,13 +343,13 @@ class TableWriter(ABC):
             os.makedirs(file_dir)
 
     def write_config(self, filename, text):
-        path = "{0}/{1}".format(self.path_out, filename)
+        path = f"{self.path_out}/{filename}"
         self.ensure_path(path)
         with open(path, "w") as f:
             f.write(text)
 
     def write_config_data(self, filename, text):
-        path = "{0}/{1}".format(self.path_out_data, filename)
+        path = f"{self.path_out_data}/{filename}"
         self.ensure_path(path)
         with open(path, "w") as f:
             f.write(text)
@@ -372,6 +369,10 @@ class TableWriter(ABC):
         return str.join('\n', data_arr)
 
     @abstractmethod
+    def get_script_file_ext(self):
+        raise NotImplementedError()
+
+    @abstractmethod
     def write_all(self, tables):
         raise NotImplementedError()
 
@@ -389,3 +390,12 @@ class EasyConverter:
     def convert(reader, writer):
         tables = reader.create_tables()
         writer.write_all(tables)
+
+    @staticmethod
+    def parse_args():
+        parser = ArgumentParser()
+        parser.add_argument("-source", type=str)
+        parser.add_argument("-out", type=str, default='./out')
+        parser.add_argument("-outdata", type=str, default='./out/data')
+        parser.add_argument("-namespace", type=str, default='EasyConverter')
+        return vars(parser.parse_args())

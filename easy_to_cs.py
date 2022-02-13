@@ -1,8 +1,6 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-import argparse
-
 from easy_converter import *
 
 template_cs = {
@@ -245,7 +243,6 @@ class CSharpWriter(TableWriter):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.file_ext = ".cs"
 
     def get_type_name(self, field):
         if isinstance(field, FieldList):
@@ -306,32 +303,6 @@ class CSharpWriter(TableWriter):
             return template["field_ctor_enum"].format(**field_args)
 
         return ""
-
-    def convert(self, tables, template):
-
-        template, default_template = {}, template
-        template.update(default_template)
-
-        arg_list = {
-            "class_ctor_functions": "",
-            "class_dict_entries": "",
-            "class_ctor_entries": "",
-            "class_entry_getters": ""
-        }
-
-        name_space_args = {"name_space": self.name_space}
-        name_space_begin = template["name_space_begin"].format(**name_space_args)
-        name_space_end = template["name_space_end"].format(**name_space_args)
-
-        arg_list["name_space_begin"] = name_space_begin
-        arg_list["name_space_end"] = name_space_end
-
-        for table in tables:
-            self.convert_table(table, template, arg_list)
-
-        self.convert_manager(tables, template, arg_list)
-
-        self.convert_miscs(tables, template, arg_list)
 
     def convert_table(self, table, template, arg_list):
 
@@ -394,10 +365,10 @@ class CSharpWriter(TableWriter):
         arg_list["class_entry_getters"] += class_entry_getters
 
         text0 = template["class_declare"].format(**table_args)
-        self.write_config("{0}{1}".format(table_name, self.file_ext), text0)
+        self.write_config(f"{table_name}{self.file_ext}", text0)
 
         text1 = self.pack_table_data(table)
-        self.write_config_data("{0}.txt".format(table_name), text1)
+        self.write_config_data(f"{table_name}.txt", text1)
 
     def convert_manager(self, tables, template, arg_list):
 
@@ -410,16 +381,35 @@ class CSharpWriter(TableWriter):
         text = template["manager"].format(**arg_list)
         self.write_config("TableManager" + self.file_ext, text)
 
+    def get_script_file_ext(self):
+        return '.cs'
+
     def write_all(self, tables):
-        self.convert(tables, template_cs)
+        template = {}
+        template.update(template_cs)
+
+        arg_list = {
+            "class_ctor_functions": "",
+            "class_dict_entries": "",
+            "class_ctor_entries": "",
+            "class_entry_getters": ""
+        }
+
+        name_space_args = {"name_space": self.name_space}
+        name_space_begin = template["name_space_begin"].format(**name_space_args)
+        name_space_end = template["name_space_end"].format(**name_space_args)
+
+        arg_list["name_space_begin"] = name_space_begin
+        arg_list["name_space_end"] = name_space_end
+
+        for table in tables:
+            self.convert_table(table, template, arg_list)
+
+        self.convert_manager(tables, template, arg_list)
+
+        self.convert_miscs(tables, template, arg_list)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-source", type=str)
-    parser.add_argument("-out", type=str, default='./out')
-    parser.add_argument("-outdata", type=str, default='./out/data')
-    parser.add_argument("-namespace", type=str, default='EasyConverter')
-    parsed_args = vars(parser.parse_args())
-
+    parsed_args = EasyConverter.parse_args()
     EasyConverter.convert(TableReader(**parsed_args), CSharpWriter(**parsed_args))

@@ -1,8 +1,6 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
-import argparse
-
 from easy_converter import *
 
 template_lua = {
@@ -39,7 +37,6 @@ class LuaWriter(TableWriter):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.file_ext = ".lua"
 
     def value_to_string(self, value, field):
         if isinstance(field, FieldList):
@@ -96,7 +93,7 @@ class LuaWriter(TableWriter):
 
         text0 = template["class_declare"].format(**table_args)
 
-        self.write_config("{0}{1}".format(table_name, self.file_ext), text0)
+        self.write_config(f"{table_name}{self.file_ext}", text0)
 
     def convert_manager(self, tables, template, arg_list):
         arg_list.update({"path_to_table": self.name_space})
@@ -125,42 +122,22 @@ class LuaWriter(TableWriter):
             data.append(pair.get("enum_name") + "=" + pair.get("enum_value"))
         return enum_name + "={" + ",".join(data) + "}"
 
-    def convert(self, tables, template):
+    def get_script_file_ext(self):
+        return '.lua'
 
-        template, default_template = {}, template
-        template.update(default_template)
+    def write_all(self, tables):
+        template = {}
+        template.update(template_lua)
 
-        arg_list = {
-            "class_ctor_functions": "",
-            "class_dict_entries": "",
-            "class_ctor_entries": "",
-            "class_entry_getters": ""
-        }
-
-        name_space_args = {"name_space": self.name_space}
-        name_space_begin = ""
-        name_space_end = ""
-
-        arg_list["name_space_begin"] = name_space_begin
-        arg_list["name_space_end"] = name_space_end
+        arg_list = {}
 
         for table in tables:
             self.convert_table(table, template, arg_list)
 
         self.convert_manager(tables, template, arg_list)
-
         self.convert_enums(tables, template, arg_list)
-
-    def write_all(self, tables):
-        self.convert(tables, template_lua)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-source", type=str)
-    parser.add_argument("-out", type=str, default='./out')
-    parser.add_argument("-outdata", type=str, default='./out/data')
-    parser.add_argument("-namespace", type=str, default='easyConverter')
-    parsed_args = vars(parser.parse_args())
-
+    parsed_args = EasyConverter.parse_args()
     EasyConverter.convert(TableReader(**parsed_args), LuaWriter(**parsed_args))
