@@ -195,6 +195,7 @@ class FieldDictionary(Field):
 
 class FieldStruct(Field):
     def __init__(self, table_name, field_name, struct_fields):
+        self.table_name = table_name
         field_def = upper_camel_case(field_name)
         if field_def == field_name:
             field_def = 'S' + field_name
@@ -204,6 +205,7 @@ class FieldStruct(Field):
 
 class FieldEnum(Field):
     def __init__(self, table_name, field_name, enum_values):
+        self.table_name = table_name
         field_def = upper_camel_case(field_name)
         if field_def == field_name:
             field_def = 'E' + field_name

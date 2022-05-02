@@ -100,7 +100,7 @@ using System.Collections.Generic;
 ''',
 
     "class_dict_entry": '''
-        private static Dictionary<int,{table_name}> dict{table_name} = new Dictionary<int,{table_name}>();
+        private static Dictionary<{table_key_type},{table_name}> dict{table_name} = new Dictionary<{table_key_type},{table_name}>();
 ''',
     "class_ctor": '''
         private static bool LoadDataFor{table_name}(Func<string,string> dataProvider)
@@ -114,13 +114,13 @@ using System.Collections.Generic;
                     continue;
                 }}
                 {table_name} table = new {table_name}(new DataBuffer(str));
-                dict{table_name}.Add(table.id, table);
+                dict{table_name}.Add(table.{table_key_name}, table);
             }}
             return true;
         }}
     ''',
     "class_entry_getter": '''
-        public static {table_name} Get{table_name}(int id)
+        public static {table_name} Get{table_name}({table_key_type} id)
         {{
             if (dict{table_name}.TryGetValue(id, out {table_name} value))
             {{
@@ -129,6 +129,12 @@ using System.Collections.Generic;
             return null;
         }}
     ''',
+    "class_all_entries_getter": '''
+        public static Dictionary<{table_key_type},{table_name}> GetAll{table_name}()
+        {{
+            return dict{table_name};
+        }}
+''',
     "class_ctor_entry": '''
             LoadDataFor{table_name}(dataProvider);
 ''',
@@ -147,6 +153,8 @@ using System;
         {class_dict_entries}
         
         {class_entry_getters}
+
+        {class_all_entries_getters}
 
         public static bool LoadData(Func<string,string> dataProvider)
         {{
@@ -304,6 +312,14 @@ class CSharpWriter(TableWriter):
 
         return ""
 
+    def get_table_key_type(self, field):
+        if isinstance(field, FieldPrimitive):
+            return field.field_def
+        elif isinstance(field, FieldEnum):
+            return f"{field.table_name}.{field.field_def}"
+        else:
+            raise Exception('not supported key type :' + field.field_def)
+
     def convert_table(self, table, template, arg_list):
 
         table_name = table.scheme.name
@@ -311,7 +327,12 @@ class CSharpWriter(TableWriter):
             **{"field_type": self.get_type_name(fld), "field_name": fld.field_name}) for fld in table.scheme.fields])
 
         fields_construct = ""
+        table_key_type = ""
+        table_key_name = ""
         for idx, fld in enumerate(table.scheme.fields):
+            if idx == 0:
+                table_key_type = self.get_table_key_type(fld)
+                table_key_name = fld.field_name
             fields_construct += self.get_field_ctor(fld, idx, template)
 
         fields_to_string_list = []
@@ -346,6 +367,8 @@ class CSharpWriter(TableWriter):
 
         table_args = {
             "table_name": table_name,
+            "table_key_type": table_key_type,
+            "table_key_name": table_key_name,
             "fields": fields,
             "fields_construct": fields_construct,
             "fields_to_string": fields_to_string,
@@ -358,11 +381,13 @@ class CSharpWriter(TableWriter):
         class_dict_entries = template["class_dict_entry"].format(**table_args)
         class_ctor_entries = template["class_ctor_entry"].format(**table_args)
         class_entry_getters = template["class_entry_getter"].format(**table_args)
+        class_all_entries_getters = template["class_all_entries_getter"].format(**table_args)
 
         arg_list["class_dict_entries"] += class_dict_entries
         arg_list["class_ctor_entries"] += class_ctor_entries
         arg_list["class_ctor_functions"] += class_ctor_functions
         arg_list["class_entry_getters"] += class_entry_getters
+        arg_list["class_all_entries_getters"] += class_all_entries_getters
 
         text0 = template["class_declare"].format(**table_args)
         self.write_config(f"{table_name}{self.file_ext}", text0)
@@ -392,7 +417,8 @@ class CSharpWriter(TableWriter):
             "class_ctor_functions": "",
             "class_dict_entries": "",
             "class_ctor_entries": "",
-            "class_entry_getters": ""
+            "class_entry_getters": "",
+            "class_all_entries_getters": "",
         }
 
         name_space_args = {"name_space": self.name_space}
