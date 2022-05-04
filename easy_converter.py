@@ -7,11 +7,23 @@ from abc import abstractmethod
 from enum import Enum
 from openpyxl import load_workbook
 from argparse import ArgumentParser
+import inflect
+
 
 def upper_camel_case(var_name):
     if var_name == '':
         return var_name
     return var_name[0].upper() + var_name[1:]
+
+
+e = inflect.engine()
+re_camel_split = re.compile(r"^[a-z]+|[A-Z][^A-Z]*")
+
+
+def plural_form(singular_form):
+    splits = re_camel_split.findall(singular_form)
+    splits[-1] = e.plural_noun(splits[-1])
+    return ''.join(splits)
 
 
 class TokenType(Enum):
@@ -236,6 +248,7 @@ class Table:
     def __init__(self, sheet):
 
         table_name = sheet.title
+        self.name = table_name
 
         data = []
         self.scheme = None
@@ -328,6 +341,7 @@ class TableReader:
             for sheet in wb:
                 if not sheet.title.startswith('_'):
                     tables.append(Table(sheet))
+        tables.sort(key=lambda t: t.name)
         return tables
 
 

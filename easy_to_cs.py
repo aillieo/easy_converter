@@ -130,7 +130,7 @@ using System.Collections.Generic;
         }}
     ''',
     "class_all_entries_getter": '''
-        public static Dictionary<{table_key_type},{table_name}> GetAll{table_name}()
+        public static Dictionary<{table_key_type},{table_name}> GetAll{table_name_plural}()
         {{
             return dict{table_name};
         }}
@@ -171,6 +171,7 @@ using System;
     "buffer": '''
 using System.Collections.Generic;
 using System;
+using System.Globalization;
 
 {name_space_begin}
 
@@ -199,22 +200,22 @@ using System;
 
         public int ReadInt()
         {{
-            return int.Parse(ReadRaw());
+            return int.Parse(ReadRaw(), CultureInfo.InvariantCulture);
         }}
 
         public long ReadLong()
         {{
-            return long.Parse(ReadRaw());
+            return long.Parse(ReadRaw(), CultureInfo.InvariantCulture);
         }}
 
         public float ReadFloat()
         {{
-            return float.Parse(ReadRaw());
+            return float.Parse(ReadRaw(), CultureInfo.InvariantCulture);
         }}
 
         public double ReadDouble()
         {{
-            return double.Parse(ReadRaw());
+            return double.Parse(ReadRaw(), CultureInfo.InvariantCulture);
         }}
 
         public bool ReadBool()
@@ -323,6 +324,7 @@ class CSharpWriter(TableWriter):
     def convert_table(self, table, template, arg_list):
 
         table_name = table.scheme.name
+        table_name_plural = plural_form(table_name)
         fields = "\n".join([template["field_declare"].format(
             **{"field_type": self.get_type_name(fld), "field_name": fld.field_name}) for fld in table.scheme.fields])
 
@@ -367,6 +369,7 @@ class CSharpWriter(TableWriter):
 
         table_args = {
             "table_name": table_name,
+            "table_name_plural": table_name_plural,
             "table_key_type": table_key_type,
             "table_key_name": table_key_name,
             "fields": fields,
