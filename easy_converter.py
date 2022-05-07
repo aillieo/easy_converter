@@ -20,9 +20,15 @@ e = inflect.engine()
 re_camel_split = re.compile(r"^[a-z]+|[A-Z][^A-Z]*")
 
 
-def plural_form(singular_form):
-    splits = re_camel_split.findall(singular_form)
+def plural_form(singular_form_name):
+    splits = re_camel_split.findall(singular_form_name)
     splits[-1] = e.plural_noun(splits[-1])
+    return ''.join(splits)
+
+
+def singular_form(plural_form_name):
+    splits = re_camel_split.findall(plural_form_name)
+    splits[-1] = e.singular_noun(splits[-1])
     return ''.join(splits)
 
 
@@ -108,7 +114,7 @@ class FieldParser:
 
     def parse_list(self, field_name):
         self.cursor += 1
-        element_type = self.parse_field_info('')
+        element_type = self.parse_field_info(singular_form(field_name))
         token = self.tokens[self.cursor]
         assert token.token_type == TokenType.ClosingBracket
         self.cursor += 1
@@ -233,10 +239,31 @@ class Scheme:
         self.fields = fields
 
     def get_associated_structs(self):
-        return (x for x in self.fields if isinstance(x, FieldStruct))
+        structs = []
+        for x in self.fields:
+            if isinstance(x, FieldStruct):
+                structs.append(x)
+            elif isinstance(x, FieldList) and isinstance(x.list_element_type, FieldStruct):
+                structs.append(x.list_element_type)
+            elif isinstance(x, FieldDictionary):
+                if isinstance(x.dict_value_type, FieldStruct):
+                    structs.append(x.dict_value_type)
+        return structs
 
     def get_associated_enums(self):
-        return (x for x in self.fields if isinstance(x, FieldEnum))
+        enums = []
+        for x in self.fields:
+            if isinstance(x, FieldEnum):
+                enums.append(x)
+            elif isinstance(x, FieldList) and isinstance(x.list_element_type, FieldEnum):
+                enums.append(x.list_element_type)
+            elif isinstance(x, FieldDictionary):
+                if isinstance(x.dict_key_type, FieldEnum):
+                    enums.append(x.dict_key_type)
+                if isinstance(x.dict_value_type, FieldEnum):
+                    enums.append(x.dict_value_type)
+
+        return enums
 
 
 class Table:
@@ -304,18 +331,35 @@ class Table:
         data.append(row_data)
 
     def append_cell(self, row, cell, field):
+        cell = self.to_safe_str(cell)
         if isinstance(field, FieldPrimitive):
-            row.append(self.to_safe_str(cell))
+            row.append(cell)
         elif isinstance(field, FieldList):
-            row.append(self.to_safe_str(cell))
+            if cell != '':
+                divisions = str.count(cell, ',') + 1
+                if isinstance(field.list_element_type, FieldStruct):
+                    prefix = str(divisions // len(field.list_element_type.struct_fields))
+                else:
+                    prefix = str(divisions)
+                row.append(prefix)
+                row.append(cell)
+            else:
+                row.append('0')
         elif isinstance(field, FieldDictionary):
-            row.append(self.to_safe_str(cell))
+            if cell != '':
+                divisions = str.count(cell, ',') + 1
+                if isinstance(field.dict_value_type, FieldStruct):
+                    prefix = str(divisions // (1 + len(field.dict_value_type.struct_fields)))
+                else:
+                    prefix = str(divisions // 2)
+                row.append(prefix)
+                row.append(cell)
+            else:
+                row.append('0')
         elif isinstance(field, FieldStruct):
-            # struct ?
-            row.append(self.to_safe_str(cell))
+            row.append(cell)
         elif isinstance(field, FieldEnum):
-            # enum ?
-            row.append(self.to_safe_str(cell))
+            row.append(cell)
         else:
             raise Exception('syntax error:' + field.field_def)
 
@@ -371,16 +415,6 @@ class TableWriter(ABC):
             f.write(text)
 
     def pack_table_data(self, table):
-        fields = table.scheme.fields
-        for row in table.data:
-            for index, cell in enumerate(row):
-                field = fields[index]
-                if isinstance(field, FieldList):
-                    prefix = str(str.count(cell, ',') + 1)
-                    row[index] = prefix + ',' + cell
-                elif isinstance(field, FieldDictionary):
-                    prefix = str((str.count(cell, ',') + 1) // 2)
-                    row[index] = prefix + ',' + cell
         data_arr = [str.join(",", row) for row in table.data]
         return str.join('\n', data_arr)
 

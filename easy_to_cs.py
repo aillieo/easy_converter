@@ -8,14 +8,14 @@ template_cs = {
         public readonly {field_type} {field_name};''',
 
     "field_ctor_primitive": '''
-            this.{field_name} = buffer.{field_type_reader}();''',
+            this.{field_name} = {field_type_reader};''',
 
     "field_ctor_list": '''
             int {field_name}Len = buffer.ReadInt();
             this.{field_name} = new List<{list_element_type}>();
             for(int i = 0; i < {field_name}Len; ++i)
             {{
-                this.{field_name}.Add(buffer.{list_element_type_reader}());
+                this.{field_name}.Add({list_element_type_reader});
             }}
         ''',
 
@@ -24,7 +24,7 @@ template_cs = {
             this.{field_name} = new Dictionary<{dict_key_type},{dict_value_type}>();
             for(int i = 0; i < {field_name}Len; ++i)
             {{
-                this.{field_name}.Add(buffer.{dict_key_type_reader}(),buffer.{dict_value_type_reader}());
+                this.{field_name}.Add({dict_key_type_reader}, {dict_value_type_reader});
             }}
         ''',
 
@@ -275,13 +275,13 @@ class CSharpWriter(TableWriter):
         return self.get_primitive_reader(field_info.field_def)
 
     def get_primitive_reader(self, type_def):
-        return "Read" + upper_camel_case(type_def)
+        return "buffer.Read" + upper_camel_case(type_def) + "()"
 
     def get_struct_reader(self, type_def):
-        return "new " + type_def + "(buffer);"
+        return "new " + type_def + "(buffer)"
 
     def get_enum_reader(self, type_def):
-        return "ReadEnum<" + type_def + '>'
+        return "buffer.ReadEnum<" + type_def + ">()"
 
     def get_field_ctor(self, field, index, template):
         field_args = {
