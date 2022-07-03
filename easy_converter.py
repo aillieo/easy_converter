@@ -28,7 +28,9 @@ def plural_form(singular_form_name):
 
 def singular_form(plural_form_name):
     splits = re_camel_split.findall(plural_form_name)
-    splits[-1] = e.singular_noun(splits[-1])
+    single = e.singular_noun(splits[-1])
+    if single is not False:
+        splits[-1] = single
     return ''.join(splits)
 
 
