@@ -106,7 +106,7 @@ using System.Collections.Generic;
         private static bool LoadDataFor{table_name}(Func<string,string> dataProvider)
         {{
             string dataStr = dataProvider("{table_name}");
-            string[] dataArr = dataStr.Split('\\n');
+            string[] dataArr = dataStr.Split('\\n','\\r');
             foreach (var str in dataArr)
             {{
                 if (string.IsNullOrEmpty(str))

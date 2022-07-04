@@ -16,22 +16,35 @@ def upper_camel_case(var_name):
     return var_name[0].upper() + var_name[1:]
 
 
+def split_last_word(var_name):
+    splits = re_camel_split.findall(var_name)
+    last_word = splits[-1]
+    rest_part = ""
+    if len(splits) > 1:
+        rest_part = "".join(splits[0:-1])
+    capitalized = last_word.istitle()
+    last_word = last_word.lower()
+    return rest_part, last_word, capitalized
+
+
 e = inflect.engine()
 re_camel_split = re.compile(r"^[a-z]+|[A-Z][^A-Z]*")
 
 
 def plural_form(singular_form_name):
-    splits = re_camel_split.findall(singular_form_name)
-    splits[-1] = e.plural_noun(splits[-1])
-    return ''.join(splits)
+    rest_part, last_word, capitalized = split_last_word(singular_form_name)
+    last_word = e.plural_noun(last_word)
+    if capitalized:
+        last_word = last_word.title()
+    return rest_part + last_word
 
 
 def singular_form(plural_form_name):
-    splits = re_camel_split.findall(plural_form_name)
-    single = e.singular_noun(splits[-1])
-    if single is not False:
-        splits[-1] = single
-    return ''.join(splits)
+    rest_part, last_word, capitalized = split_last_word(plural_form_name)
+    last_word = e.singular_noun(last_word)
+    if capitalized:
+        last_word = last_word.title()
+    return rest_part + last_word
 
 
 class TokenType(Enum):
@@ -386,6 +399,7 @@ class TableReader:
             wb = load_workbook(filename=file, read_only=True, data_only=True)
             for sheet in wb:
                 if not sheet.title.startswith('_'):
+                    print(f"reading {os.path.basename(file)}:[{sheet.title}]...")
                     tables.append(Table(sheet))
         tables.sort(key=lambda t: t.name)
         return tables
@@ -407,13 +421,13 @@ class TableWriter(ABC):
     def write_config(self, filename, text):
         path = f"{self.path_out}/{filename}"
         self.ensure_path(path)
-        with open(path, "w") as f:
+        with open(path, "w", encoding='utf8') as f:
             f.write(text)
 
     def write_config_data(self, filename, text):
         path = f"{self.path_out_data}/{filename}"
         self.ensure_path(path)
-        with open(path, "w") as f:
+        with open(path, "w", encoding='utf8') as f:
             f.write(text)
 
     def pack_table_data(self, table):
