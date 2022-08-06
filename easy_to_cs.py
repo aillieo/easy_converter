@@ -146,12 +146,8 @@ using System;
 
     public static class TableManager
     {{
-
-        private static readonly string strN = "{table_special_str_n}";
-        private static readonly string strS = "{table_special_str_s}";
-
         {class_dict_entries}
-        
+
         {class_entry_getters}
 
         {class_all_entries_getters}
@@ -177,6 +173,9 @@ using System.Globalization;
 
     public class DataBuffer
     {{
+        private static readonly string strN = "{table_special_str_n}";
+        private static readonly string strS = "{table_special_str_s}";
+
         private string data;
         private int index;
 
@@ -225,8 +224,7 @@ using System.Globalization;
 
         public string ReadString()
         {{
-            string ret = ReadRaw();
-            return ret;
+            return ReadRaw().Replace(strN, "\\n").Replace(strS, ",");
         }}
 
         public T ReadEnum<T>() where T : struct
@@ -261,6 +259,12 @@ class CSharpWriter(TableWriter):
         return field.field_def
 
     def convert_miscs(self, tables, template, arg_list):
+
+        arg_list.update({
+            "table_special_str_s": Table.special_str['\\,'],
+            "table_special_str_n": Table.special_str['\n']
+        })
+
         text = template["buffer"].format(**arg_list)
         self.write_config("DataBuffer" + self.file_ext, text)
 
@@ -399,11 +403,6 @@ class CSharpWriter(TableWriter):
         self.write_config_data(f"{table_name}.txt", text1)
 
     def convert_manager(self, tables, template, arg_list):
-
-        arg_list.update({
-            "table_special_str_s": Table.special_str['\\,'],
-            "table_special_str_n": Table.special_str['\n']
-        })
 
         arg_list["table_construct"] = ""
         text = template["manager"].format(**arg_list)
