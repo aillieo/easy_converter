@@ -6,17 +6,22 @@ from abc import ABC
 from abc import abstractmethod
 from enum import Enum
 from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.cell.cell import Cell
 from argparse import ArgumentParser
 import inflect
+from jinja2 import Environment, FileSystemLoader
+from typing import List, Tuple, Union, Any, Generator, Optional
+from typing_extensions import LiteralString
 
 
-def upper_camel_case(var_name):
+def upper_camel_case(var_name: str) -> str:
     if var_name == '':
         return var_name
     return var_name[0].upper() + var_name[1:]
 
 
-def split_last_word(var_name):
+def split_last_word(var_name: str) -> Tuple[Union[LiteralString, str], Any, Any]:
     splits = re_camel_split.findall(var_name)
     last_word = splits[-1]
     rest_part = ""
@@ -71,9 +76,9 @@ class Token:
     }
     re_variable_name = re.compile(r"^\w+\d*$")
 
-    def __init__(self, value):
-        self.value = value
-        self.token_type = None
+    def __init__(self, value: str):
+        self.value: str = value
+        self.token_type: Optional[TokenType] = None
         if value in self.primitive_types:
             self.token_type = TokenType.PrimitiveType
             return
@@ -89,20 +94,26 @@ class Token:
         raise Exception(value)
 
 
+class EnumFieldValue:
+    def __init__(self, enum_name, enum_value):
+        self.enum_name = enum_name
+        self.enum_value = enum_value
+
+
 class FieldParser:
     re_token = re.compile(r'[\d\w]+<?|[>,]')
 
-    def __init__(self, table_name, field_name, field_def):
-        self.table_name = table_name
-        self.field_name = field_name
-        self.field_def = field_def
-        self.tokens = self.tokenize()
-        self.cursor = 0
-        self.field_info = self.parse_field_info(self.field_name)
+    def __init__(self, table_name: str, field_name: str, field_def: str):
+        self.table_name: str = table_name
+        self.field_name: str = field_name
+        self.field_def: str = field_def
+        self.tokens: List[Token] = self.tokenize()
+        self.cursor: int = 0
+        self.field_info: Field = self.parse_field_info(self.field_name)
         if self.cursor != len(self.tokens):
             raise Exception("")
 
-    def tokenize(self):
+    def tokenize(self) -> List[Token]:
         # print(self.field_def)
         return [Token(t) for t in self.re_token.findall(self.field_def)]
 
@@ -185,7 +196,7 @@ class FieldParser:
             token = self.tokens[self.cursor]
             assert token.token_type == TokenType.Number
             enum_value = token.value
-            enum_values.append({"enum_name": enum_name, "enum_value": enum_value})
+            enum_values.append(EnumFieldValue(enum_name, enum_value))
             self.cursor += 1
             token = self.tokens[self.cursor]
             if token.token_type == TokenType.ClosingBracket:
@@ -202,58 +213,72 @@ class FieldParser:
         return self.field_info
 
 
+class FieldType(Enum):
+    Primitive = 1
+    List = 2
+    Dictionary = 3
+    Struct = 4
+    Enum = 5
+
+
 class Field:
-    def __init__(self, field_name, field_def):
-        self.field_name = field_name
-        self.field_def = field_def
+    def __init__(self, field_name: str, field_def: str):
+        self.field_name: str = field_name
+        self.field_def: str = field_def
+        self.field_type: Optional[FieldType] = None
 
 
 class FieldPrimitive(Field):
-    def __init__(self, field_name, field_type):
+    def __init__(self, field_name: str, field_type: str):
         super().__init__(field_name, field_type)
+        self.field_type = FieldType.Primitive
 
 
 class FieldList(Field):
-    def __init__(self, field_name, element_type):
+    def __init__(self, field_name: str, element_type: Field):
         super().__init__(field_name, '')
+        self.field_type = FieldType.List
         self.list_element_type = element_type
 
 
 class FieldDictionary(Field):
-    def __init__(self, field_name, key_type, value_type):
+    def __init__(self, field_name: str, key_type: Field, value_type: Field):
         super().__init__(field_name, '')
-        self.dict_key_type = key_type
-        self.dict_value_type = value_type
+        self.field_type = FieldType.Dictionary
+        self.dict_key_type: Field = key_type
+        self.dict_value_type: Field = value_type
 
 
 class FieldStruct(Field):
-    def __init__(self, table_name, field_name, struct_fields):
+    def __init__(self, table_name: str, field_name: str, struct_fields: List[Field]):
         self.table_name = table_name
         field_def = upper_camel_case(field_name)
         if field_def == field_name:
             field_def = 'S' + field_name
         super().__init__(field_name, field_def)
-        self.struct_fields = struct_fields
+        self.field_type = FieldType.Struct
+        self.struct_fields: List[Field] = struct_fields
 
 
 class FieldEnum(Field):
-    def __init__(self, table_name, field_name, enum_values):
+    def __init__(self, table_name: str, field_name: str, enum_values: List[EnumFieldValue]):
         self.table_name = table_name
         field_def = upper_camel_case(field_name)
         if field_def == field_name:
             field_def = 'E' + field_name
         super().__init__(field_name, field_def)
+        self.field_type = FieldType.Enum
         self.enum_values = enum_values
 
 
 class Scheme:
 
-    def __init__(self, name, fields):
-        self.full_name = name
-        self.name = name
-        self.fields = fields
+    def __init__(self, name: str, fields: List[Field]):
+        self.full_name: str = name
+        self.name: str = name
+        self.fields: List[Field] = fields
 
-    def get_associated_structs(self):
+    def get_associated_structs(self) -> List[FieldStruct]:
         structs = []
         for x in self.fields:
             if isinstance(x, FieldStruct):
@@ -265,7 +290,7 @@ class Scheme:
                     structs.append(x.dict_value_type)
         return structs
 
-    def get_associated_enums(self):
+    def get_associated_enums(self) -> List[FieldEnum]:
         enums = []
         for x in self.fields:
             if isinstance(x, FieldEnum):
@@ -287,13 +312,13 @@ class Table:
         '\\,': ':l/~',
     }
 
-    def __init__(self, sheet):
+    def __init__(self, sheet: Worksheet):
 
         table_name = sheet.title
         self.name = table_name
 
-        data = []
-        self.scheme = None
+        data: List[List[str]] = []
+        self.scheme: Optional[Scheme] = None
 
         field_names, field_defs = None, None
 
@@ -320,16 +345,17 @@ class Table:
 
         if self.scheme is None:
             raise Exception("invalid sheet file: " + sheet.title)
-        if len(data) > 0:
-            self.data = data
+        self.data: List[List[str]] = data
 
-    def try_read_field_names(self, row):
+    @staticmethod
+    def try_read_field_names(row) -> Generator[str, Any, None]:
         return (str(x) for x in row if x is not None and x != '')
 
-    def try_read_field_defs(self, row):
+    @staticmethod
+    def try_read_field_defs(row) -> Generator[str, Any, None]:
         return (str(x) for x in row if x is not None and x != '')
 
-    def to_safe_str(self, raw_str):
+    def to_safe_str(self, raw_str: Union[str, LiteralString, Cell, None]) -> str:
         if raw_str is None:
             return ''
         new_str = str(raw_str)
@@ -337,44 +363,45 @@ class Table:
             new_str = new_str.replace(old, new)
         return new_str
 
-    def append_row(self, data, row):
-        row_data = []
+    def append_row(self, data: List[List[str]], row):
+        assert isinstance(self.scheme, Scheme)
+        row_data: List[str] = []
         count = len(self.scheme.fields)
         for index, cell in enumerate(row):
             if index < count:
                 self.append_cell(row_data, cell, self.scheme.fields[index])
         data.append(row_data)
 
-    def append_cell(self, row, cell, field):
-        cell = self.to_safe_str(cell)
+    def append_cell(self, row: List[str], cell: Cell, field: Field):
+        cell_str = self.to_safe_str(cell)
         if isinstance(field, FieldPrimitive):
-            row.append(cell)
+            row.append(cell_str)
         elif isinstance(field, FieldList):
-            if cell != '':
-                divisions = str.count(cell, ',') + 1
+            if cell_str != '':
+                divisions = str.count(cell_str, ',') + 1
                 if isinstance(field.list_element_type, FieldStruct):
                     prefix = str(divisions // len(field.list_element_type.struct_fields))
                 else:
                     prefix = str(divisions)
                 row.append(prefix)
-                row.append(cell)
+                row.append(cell_str)
             else:
                 row.append('0')
         elif isinstance(field, FieldDictionary):
-            if cell != '':
-                divisions = str.count(cell, ',') + 1
+            if cell_str != '':
+                divisions = str.count(cell_str, ',') + 1
                 if isinstance(field.dict_value_type, FieldStruct):
                     prefix = str(divisions // (1 + len(field.dict_value_type.struct_fields)))
                 else:
                     prefix = str(divisions // 2)
                 row.append(prefix)
-                row.append(cell)
+                row.append(cell_str)
             else:
                 row.append('0')
         elif isinstance(field, FieldStruct):
-            row.append(cell)
+            row.append(cell_str)
         elif isinstance(field, FieldEnum):
-            row.append(cell)
+            row.append(cell_str)
         else:
             raise Exception('syntax error:' + field.field_def)
 
@@ -392,7 +419,7 @@ class TableReader:
             source_files.extend([os.path.join(root, f) for f in files if f.endswith('.xlsx') and not f.startswith('_')])
         return source_files
 
-    def create_tables(self):
+    def create_tables(self) -> List[Table]:
         source_files = self.find_files()
         tables = []
         for file in source_files:
@@ -408,52 +435,62 @@ class TableReader:
 class TableWriter(ABC):
 
     def __init__(self, *args, **kwargs):
-        self.path_out = kwargs.get("out") or './out'
-        self.path_out_data = kwargs.get("outdata") or './out_data'
-        self.name_space = kwargs.get("namespace") or 'EasyConverter'
-        self.file_ext = self.get_script_file_ext()
+        self.path_out: str = kwargs.get("out") or './out'
+        self.path_out_data: str = kwargs.get("outdata") or './out_data'
+        self.name_space: str = kwargs.get("namespace") or 'EasyConverter'
+        self.file_ext: str = self.get_script_file_ext()
+        python_file_path = os.path.abspath(__file__)
+        python_dir_path = os.path.dirname(python_file_path)
+        template_path = os.path.join(python_dir_path, self.get_template_file_dir())
+        self.env: Environment = Environment(
+            loader=FileSystemLoader(template_path),
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
+        self.env.globals['FieldType'] = FieldType
+        self.env.globals['name_space'] = self.name_space
+        self.env.filters['upper_camel_case'] = upper_camel_case
+        self.env.filters['plural_form'] = plural_form
 
-    def ensure_path(self, path):
+    @staticmethod
+    def ensure_path(path: str):
         file_dir = os.path.dirname(path)
         if not os.path.isdir(file_dir):
             os.makedirs(file_dir)
 
-    def write_config(self, filename, text):
+    def write_config(self, filename: str, text: str):
         path = f"{self.path_out}/{filename}"
         self.ensure_path(path)
         with open(path, "w", encoding='utf8') as f:
             f.write(text)
 
-    def write_config_data(self, filename, text):
+    def write_config_data(self, filename: str, text: str):
         path = f"{self.path_out_data}/{filename}"
         self.ensure_path(path)
         with open(path, "w", encoding='utf8') as f:
             f.write(text)
 
-    def pack_table_data(self, table):
+    @staticmethod
+    def pack_table_data(table: Table) -> str:
         data_arr = [str.join(",", row) for row in table.data]
         return str.join('\n', data_arr)
 
     @abstractmethod
-    def get_script_file_ext(self):
+    def get_template_file_dir(self) -> str:
         raise NotImplementedError()
 
     @abstractmethod
-    def write_all(self, tables):
+    def get_script_file_ext(self) -> str:
         raise NotImplementedError()
 
-
-class IntegratedTableWriter(TableWriter):
-    pass
-
-
-class SeparatedTableWriter(TableWriter):
-    pass
+    @abstractmethod
+    def write_all(self, tables: List[Table]):
+        raise NotImplementedError()
 
 
 class EasyConverter:
     @staticmethod
-    def convert(reader, writer):
+    def convert(reader: TableReader, writer: TableWriter):
         tables = reader.create_tables()
         writer.write_all(tables)
 

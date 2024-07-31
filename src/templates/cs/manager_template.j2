@@ -1,0 +1,73 @@
+using System.Collections.Generic;
+using System;
+
+namespace {{ name_space }}
+{
+    public static class TableManager
+    {
+        {% for table in tables %}
+            {% with key_field = table.scheme.fields | first %}
+                {% if key_field.field_type == FieldType.Primitive %}
+                    private static Dictionary<{{ key_field.field_def }},{{ table.scheme.name }}> dict{{ table.scheme.name }} = new Dictionary<{{ key_field.field_def }},{{ table.scheme.name }}>();
+                {% elif key_field.field_type == FieldType.Primitive %}
+                    private static Dictionary<{{ key_field.field_def }},{{ table.scheme.name }}> dict{{ table.scheme.name }} = new Dictionary<{{ key_field.field_def }},{{ table.scheme.name }}>();
+                {% endif %}
+            {% endwith %}
+        {% endfor %}
+
+        {{ class_entry_getters }}
+
+        {{ class_all_entries_getters }}
+
+        public static bool LoadData(Func<string,string> dataProvider)
+        {
+            {% for table in tables %}
+                LoadDataFor{{ table.scheme.name }}(dataProvider);
+            {% endfor %}
+
+            return true;
+        }
+
+        {% for table in tables %}
+            {% with key_field = table.scheme.fields | first %}
+                private static bool LoadDataFor{{ table.scheme.name }}(Func<string,string> dataProvider)
+                {
+                    string dataStr = dataProvider("{{ table.scheme.name }}");
+                    string[] dataArr = dataStr.Split('\n','\r');
+                    foreach (var str in dataArr)
+                    {
+                        if (string.IsNullOrEmpty(str))
+                        {
+                            continue;
+                        }
+                        var table = new {{ table.scheme.name }}(new DataBuffer(str));
+                        dict{{ table.scheme.name }}.Add(table.{{ key_field.field_name }}, table);
+                    }
+                    return true;
+                }
+            {% endwith %}
+        {% endfor %}
+
+        {% for table in tables %}
+            {% set key_field = table.scheme.fields | first %}
+            {% set table_name = table.scheme.name %}
+            {% set table_name_plural = table.scheme.name | plural_form %}
+
+            public static Dictionary<{{ key_field.field_def }},{{ table_name }}> GetAll{{ table_name_plural }}()
+            {
+                return dict{{ table_name }};
+            }
+
+            public static {{ table_name }} Get{{ table_name }}({{ key_field.field_def }} id)
+            {
+                if (dict{{ table_name }}.TryGetValue(id, out var value))
+                {
+                    return value;
+                }
+
+                return default;
+            }
+
+        {% endfor %}
+    }
+}

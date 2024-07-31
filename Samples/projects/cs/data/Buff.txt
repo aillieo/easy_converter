@@ -1,0 +1,4 @@
+3001,IncreaseAttack
+3002,IncreaseAttack
+3003,IncreaseSpeed
+3004,DecreaseSpeed
