@@ -92,10 +92,10 @@ namespace {{ name_space }}
 
         {% endfor %}
 
-        {% for struct in table.get_associated_enums() %}
-            public enum {{ struct.field_def }}
+        {% for enum in table.get_associated_enums() %}
+            public enum {{ enum.field_def }}
             {
-                {% for enum_field_value in struct.enum_values %}
+                {% for enum_field_value in enum.enum_values %}
                     {{ enum_field_value.enum_name }} = {{ enum_field_value.enum_value }},
                 {% endfor %}
             }

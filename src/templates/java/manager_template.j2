@@ -1,0 +1,58 @@
+{% import 'macros.j2' as macros %}
+
+package {{ name_space }};
+
+import java.util.HashMap;
+
+public class TableManager
+{
+    private static final String strN = "{{ table_special_str_n }}";
+    private static final String strS = "{{ table_special_str_s }}";
+
+    {% for table in tables %}
+        {% with key_field = table.scheme.fields | first %}
+            private static HashMap<{{ macros.field_type_name(key_field, true) | trim }},{{ table.scheme.name }}> dict{{ table.scheme.name }} = new HashMap<{{ macros.field_type_name(key_field, true) | trim }},{{ table.scheme.name }}>();
+        {% endwith %}
+    {% endfor %}
+
+    public static boolean LoadData(FuncStr2Str dataProvider)
+    {
+        {% for table in tables %}
+            LoadDataFor{{ table.scheme.name }}(dataProvider);
+        {% endfor %}
+
+        return true;
+    }
+
+    {% for table in tables %}
+        {% with key_field = table.scheme.fields | first %}
+            private static boolean LoadDataFor{{ table.scheme.name }}(FuncStr2Str dataProvider)
+            {
+                String dataStr = dataProvider.invoke("{{ table.scheme.name }}");
+                String[] dataArr = dataStr.split("\n");
+                for (String str : dataArr)
+                {
+                    if (str == null || str.equals(""))
+                    {
+                        continue;
+                    }
+                    {{ table.scheme.name }} table = new {{ table.scheme.name }}(new DataBuffer(str));
+                    dict{{ table.scheme.name }}.put(table.{{ key_field.field_name }}, table);
+                }
+                return true;
+            }
+        {% endwith %}
+    {% endfor %}
+
+    {% for table in tables %}
+        {% set key_field = table.scheme.fields | first %}
+        {% set table_name = table.scheme.name %}
+        {% set table_name_plural = table.scheme.name | plural_form %}
+
+        public static {{ table_name }} Get{{ table_name }}({{ key_field.field_def }} id)
+        {
+            return dict{{ table_name }}.getOrDefault(id, null);
+        }
+
+    {% endfor %}
+}

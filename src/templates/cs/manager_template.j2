@@ -15,10 +15,6 @@ namespace {{ name_space }}
             {% endwith %}
         {% endfor %}
 
-        {{ class_entry_getters }}
-
-        {{ class_all_entries_getters }}
-
         public static bool LoadData(Func<string,string> dataProvider)
         {
             {% for table in tables %}

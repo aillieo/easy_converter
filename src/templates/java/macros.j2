@@ -1,0 +1,24 @@
+{% set raw_name_to_java_name = {
+    "bool": "boolean",
+    "string": "String"
+} %}
+
+{% set raw_name_to_java_obj_name = {
+    "int": "Integer",
+    "long": "Long",
+    "string": "String"
+} %}
+
+{% macro field_type_name(field, as_obj_name) -%}
+    {%- if field.field_type == FieldType.List -%}
+        ArrayList<{{ field_type_name(field.list_element_type, true) | trim }}>
+    {%- elif field.field_type == FieldType.Dictionary -%}
+        HashMap<{{ field_type_name(field.dict_key_type, true) | trim }},{{ field_type_name(field.dict_value_type, true) | trim }}>
+    {%- else -%}
+        {%- if as_obj_name -%}
+            {{ raw_name_to_java_obj_name.get(field.field_def, field.field_def) }}
+        {%- else -%}
+            {{ raw_name_to_java_name.get(field.field_def, field.field_def) }}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}

@@ -1,0 +1,57 @@
+package {{ name_space }};
+
+public class DataBuffer
+{
+    private String data;
+    private int index;
+
+    public DataBuffer(String source)
+    {
+        this.data = source;
+        this.index = 0;
+    }
+
+    private String ReadRaw()
+    {
+        int pos = index;
+        while (pos < this.data.length() && this.data.charAt(pos) != ',')
+        {
+            pos++;
+        }
+        String ret = this.data.substring(index, pos - index);
+        index = pos + 1;
+        return ret;
+    }
+
+    public int ReadInt()
+    {
+        return Integer.parseInt(ReadRaw());
+    }
+
+    public long ReadLong()
+    {
+        return Long.parseLong(ReadRaw());
+    }
+
+    public float ReadFloat()
+    {
+        return Float.parseFloat(ReadRaw());
+    }
+
+    public double ReadDouble()
+    {
+        return Double.parseDouble(ReadRaw());
+    }
+
+    public boolean ReadBool()
+    {
+        return ReadRaw().toLowerCase().equals("true");
+    }
+
+    public String ReadString()
+    {
+        String ret = ReadRaw();
+        return ret;
+    }
+
+}

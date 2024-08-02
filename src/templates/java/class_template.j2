@@ -1,0 +1,120 @@
+{% import 'macros.j2' as macros %}
+
+{% macro read_field(field) -%}
+    {%- if field.field_type == FieldType.Primitive -%}
+        buffer.Read{{ field.field_def | upper_camel_case }}();
+    {%- elif field.field_type == FieldType.List -%}
+        {{ read_list(field) }}
+    {%- elif field.field_type == FieldType.Dictionary -%}
+        {{ read_dict(field) }}
+    {%- elif field.field_type == FieldType.Struct -%}
+        new {{ field.field_def }}(buffer);
+    {%- elif field.field_type == FieldType.Enum -%}
+        {{ field.field_def }}.valueOf(buffer.ReadInt());
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro read_list(field) %}
+    this.{{ field.field_name }} = new {{ macros.field_type_name(field) }}();
+    int {{ field.field_name }}Len = buffer.ReadInt();
+    for(int i = 0; i < {{ field.field_name }}Len; ++i)
+    {
+        var item = {{ read_field(field.list_element_type) }}
+        this.{{ field.field_name }}.add(item);
+    }
+{% endmacro %}
+
+{% macro read_dict(field) %}
+    this.{{ field.field_name }} = new {{ macros.field_type_name(field) }}();
+    int {{ field.field_name }}Len = buffer.ReadInt();
+    for(int i = 0; i < {{ field.field_name }}Len; ++i)
+    {
+        var key = {{ read_field(field.dict_key_type) }}
+        var value = {{ read_field(field.dict_value_type) }}
+        this.{{ field.field_name }}.put(key, value);
+    }
+{% endmacro %}
+
+
+package {{ name_space }};
+
+import java.util.HashMap;
+import java.util.ArrayList;
+
+public class {{ table.name }}
+{
+    {% for field in table.fields %}
+    public final {{ macros.field_type_name(field) }} {{ field.field_name }};
+    {% endfor %}
+
+    public {{ table.name }}(DataBuffer buffer)
+    {
+        {% for field in table.fields %}
+            {% if field.field_type == FieldType.List or field.field_type == FieldType.Dictionary %}
+                {{ read_field(field) }}
+            {% else %}
+                this.{{ field.field_name }} = {{ read_field(field) }}
+            {% endif %}
+        {% endfor %}
+    }
+
+    @Override
+    public String toString()
+    {
+        return "";
+    }
+
+    {% for struct in table.get_associated_structs() %}
+
+        public class {{ struct.field_name | upper_camel_case }}
+        {
+            {% for field in struct.struct_fields %}
+                public final {{ macros.field_type_name(field) }} {{ field.field_name }};
+            {% endfor %}
+
+            public {{ struct.field_name | upper_camel_case }}(DataBuffer buffer)
+            {
+                {% for field in struct.struct_fields %}
+                    this.{{ field.field_name }} = {{ read_field(field) }}
+                {% endfor %}
+            }
+
+            @Override
+            public String toString()
+            {
+                return "";
+            }
+        }
+
+    {% endfor %}
+
+    {% for enum in table.get_associated_enums() %}
+
+        enum {{ enum.field_def }}
+        {
+            {% for enum_field_value in enum.enum_values %}
+                {{ enum_field_value.enum_name }}({{ enum_field_value.enum_value }}),
+            {% endfor %}
+            ;
+
+            public final int value;
+            {{ enum.field_def }}(int v)
+            {
+                value = v;
+            }
+
+            public static State valueOf(int v)
+            {
+                switch (v)
+                {
+                    {% for enum_field_value in enum.enum_values %}
+                        case {{ enum_field_value.enum_value }}: return {{ enum_field_value.enum_name }};
+                    {% endfor %}
+
+                    default:
+                        throw new EnumConstantNotPresentException({{ enum.field_def }}.class, Integer.toString(v));
+                }
+            }
+        }
+    {% endfor %}
+}

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPT=../../../src/easy_to_cs.py
+SCRIPT=../../../src/easy_to_java.py
 CONFIG_FILE="paths.config"
 NAME_SPACE="EasyConverter"
 
@@ -27,8 +27,8 @@ else
     exit 1
 fi
 
-rm -rf $OUTPUT_SRC_DIR
-rm -rf $OUTPUT_DATA_DIR
+rm -rf $out
+rm -rf $out_data
 
 $PYTHON $SCRIPT -source $INPUT_DIR -out $OUTPUT_SRC_DIR -outdata $OUTPUT_DATA_DIR -namespace $NAME_SPACE
 
