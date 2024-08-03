@@ -1,0 +1,90 @@
+{%  macro format_data(raw_data, field) %}
+
+    {%- if field.field_type == FieldType.Primitive -%}
+        {%- if field.field_def == "string" -%}
+            '{{ raw_data }}'
+        {%- else -%}
+            {{ raw_data }}
+        {%- endif -%}
+    {%- elif field.field_type == FieldType.List -%}
+        {{ format_list(raw_data, field) }}
+    {%- elif field.field_type == FieldType.Dictionary -%}
+        {{ format_dict(raw_data, field) }}
+    {%- elif field.field_type == FieldType.Struct -%}
+        {{ format_struct(raw_data, field) }}
+    {%- elif field.field_type == FieldType.Enum -%}
+        {{ format_enum(raw_data, field) }}
+    {%- endif -%}
+
+{%  endmacro %}
+
+{%  macro format_list(raw_data, field) -%}
+    {
+        {%- for element in raw_data.split(',')[1:] -%}
+            {{ format_data(element, field.list_element_type) }}
+            {%- if not loop.last -%}
+                ,
+            {%- endif -%}
+        {%- endfor -%}
+    }
+{%- endmacro %}
+
+{%  macro format_dict(raw_data, field) -%}
+    {
+        {%- for element in raw_data.split(',')[1:] -%}
+            {%- if loop.index0 % 2 == 0 -%}
+                {%- with key_field = field.dict_key_type -%}
+                    {%- if key_field.field_type == FieldType.Primitive and key_field.field_def == "string" -%}
+                        {{ element }}=
+                    {%- else -%}
+                        [{{ format_data(element, field.dict_key_type) }}]=
+                    {%- endif -%}
+                {% endwith %}
+            {%- else -%}
+                {{ format_data(element, field.dict_value_type) }}
+                {%- if not loop.last -%}
+                    ,
+                {%- endif -%}
+            {%- endif -%}
+        {%- endfor -%}
+    }
+{%- endmacro %}
+
+{%  macro format_struct(raw_data, field) -%}
+    {
+        {%- for struct_data, struct_field in zip(raw_data.split(','), field.struct_fields) -%}
+            {{ struct_field.field_name }}={{ format_data(struct_data, struct_field) }}
+            {%- if not loop.last -%}
+                ,
+            {%- endif -%}
+        {%- endfor -%}
+    }
+{%- endmacro %}
+
+{%  macro format_enum(raw_data, field) -%}
+    {% for enum_field_value in field.enum_values %}
+        {%- if enum_field_value.enum_name == raw_data -%}
+            {{ enum_field_value.enum_value }}
+        {%- endif -%}
+    {% endfor %}
+{%- endmacro %}
+
+local {{ table.name }} = {
+
+        {% for row in data %}
+
+            [{{ row | first }}] = {
+                {%- for raw_data, field in zip(row, table.fields) -%}
+                    {{ field.field_name }}={{ format_data(raw_data, field) }}
+                    {%- if not loop.last -%}
+                        ,
+                    {%- endif -%}
+                {%- endfor -%}
+            }
+            {%- if not loop.last -%}
+                ,
+            {%- endif -%}
+        {% endfor %}
+}
+
+return {{ table.name }}

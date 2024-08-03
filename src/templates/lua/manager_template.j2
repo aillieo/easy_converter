@@ -1,0 +1,26 @@
+local TableManager = {}
+
+function TableManager.GetTable(tableName)
+    {% if path_to_table is defined %}
+        return require("{{ path_to_table }}/" .. tostring(tableName))
+    {% else %}
+        return require(tostring(tableName))
+    {% endif %}
+end
+
+{% for table in tables %}
+    {% set table_name = table.scheme.name %}
+    {% set table_name_plural = table.scheme.name | plural_form %}
+
+    function TableManager.GetAll{{ table_name_plural }}()
+        return TableManager.GetTable("{{ table_name }}")
+    end
+
+    function TableManager.Get{{ table_name }}(id)
+        local tb = TableManager.GetTable("{{ table_name }}")
+        return tb and tb[id] or nil
+    end
+
+{% endfor %}
+
+return TableManager

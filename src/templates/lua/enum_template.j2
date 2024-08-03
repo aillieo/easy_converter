@@ -1,0 +1,22 @@
+local TableEnums = {}
+
+    {% for table in tables %}
+        {% with enums = table.scheme.get_associated_enums() %}
+            {% if enums | length %}
+
+                TableEnums.{{ table.scheme.name }} = {}
+
+                {% for enum in enums %}
+
+                    {% for enum_field_value in enum.enum_values %}
+                        TableEnums.{{ table.scheme.name }}.{{ enum_field_value.enum_name }} = {{ enum_field_value.enum_value }},
+                    {% endfor %}
+
+                {% endfor %}
+
+            {% endif %}
+        {% endwith %}
+
+    {% endfor %}
+
+return TableEnums
