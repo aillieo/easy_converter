@@ -10,10 +10,6 @@ namespace EasyConverter
                     private static Dictionary<int,NPCHero> dictNPCHero = new Dictionary<int,NPCHero>();
                     private static Dictionary<int,Skill> dictSkill = new Dictionary<int,Skill>();
 
-        
-
-        
-
         public static bool LoadData(Func<string,string> dataProvider)
         {
                 LoadDataForBuff(dataProvider);

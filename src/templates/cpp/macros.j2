@@ -1,0 +1,15 @@
+{% macro field_type_name(field) -%}
+    {%- if field.field_type == FieldType.List -%}
+        std::vector<{{ field_type_name(field.list_element_type) | trim }}>
+    {%- elif field.field_type == FieldType.Dictionary -%}
+        std::unordered_map<{{ field_type_name(field.dict_key_type) | trim }},{{ field_type_name(field.dict_value_type) | trim }}>
+    {%- elif field.field_type == FieldType.Primitive -%}
+        {%- if field.field_def == "string" -%}
+            std::string
+        {%- else -%}
+            {{ field.field_def }}
+        {%- endif -%}
+    {%- else -%}
+        {{ field.field_def }}
+    {%- endif -%}
+{%- endmacro %}

@@ -1,0 +1,43 @@
+{% import 'macros.j2' as macros %}
+
+#pragma once
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <functional>
+
+namespace {{ name_space }}{
+
+    {% for table in tables %}
+        class {{ table.scheme.name }};
+    {% endfor %}
+
+    class TableManager
+    {
+        private:
+        {% for table in tables %}
+            {% with key_field = table.scheme.fields | first %}
+                static std::unordered_map<{{ macros.field_type_name(key_field) | trim }},{{ table.scheme.name }}> dict{{ table.scheme.name }};
+            {% endwith %}
+        {% endfor %}
+
+        {% for table in tables %}
+            {% with key_field = table.scheme.fields | first %}
+                static bool LoadDataFor{{ table.scheme.name }}(std::function<std::string(std::string)> dataProvider);
+            {% endwith %}
+        {% endfor %}
+
+        public:
+        static bool LoadData(std::function<std::string(std::string)> dataProvider);
+
+        {% for table in tables %}
+            {% set key_field = table.scheme.fields | first %}
+            {% set table_name = table.scheme.name %}
+            {% set table_name_plural = table.scheme.name | plural_form %}
+
+            static {{ table_name }} Get{{ table_name }}({{ key_field.field_def }} id);
+            static std::unordered_map<{{ macros.field_type_name(key_field) | trim }},{{ table_name }}>  GetAll{{ table_name_plural }}();
+
+        {% endfor %}
+    };
+}

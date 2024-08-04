@@ -4,6 +4,7 @@ import os
 import re
 from abc import ABC
 from abc import abstractmethod
+from datetime import datetime
 from enum import Enum
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -11,8 +12,9 @@ from openpyxl.cell.cell import Cell
 from argparse import ArgumentParser
 import inflect
 from jinja2 import Environment, FileSystemLoader
-from typing import List, Tuple, Union, Any, Generator, Optional
+from typing import List, Tuple, Union, Any, Generator, Optional, Iterator
 from typing_extensions import LiteralString
+from functools import partial
 
 
 def upper_camel_case(var_name: str) -> str:
@@ -306,6 +308,65 @@ class Scheme:
         return enums
 
 
+class CellData:
+    def __init__(self, raw_cell: Union[str, float, datetime, None], field: Field):
+        raw_str = self.to_safe_str(raw_cell)
+        self.field = field
+        if isinstance(field, FieldPrimitive):
+            self.raw_str = raw_str
+        elif isinstance(field, FieldList):
+            if raw_str != '':
+                divisions = str.count(raw_str, ',') + 1
+                if isinstance(field.list_element_type, FieldStruct):
+                    prefix = str(divisions // len(field.list_element_type.struct_fields))
+                else:
+                    prefix = str(divisions)
+                self.raw_str = raw_str = prefix + ',' + raw_str
+            else:
+                self.raw_str = '0'
+        elif isinstance(field, FieldDictionary):
+            if raw_str != '':
+                divisions = str.count(raw_str, ',') + 1
+                if isinstance(field.dict_value_type, FieldStruct):
+                    prefix = str(divisions // (1 + len(field.dict_value_type.struct_fields)))
+                else:
+                    prefix = str(divisions // 2)
+                self.raw_str = raw_str = prefix + ',' + raw_str
+            else:
+                self.raw_str = '0'
+        elif isinstance(field, FieldStruct):
+            self.raw_str = raw_str
+        elif isinstance(field, FieldEnum):
+            self.raw_str = raw_str
+        else:
+            raise Exception('syntax error:' + field.field_def)
+
+    @staticmethod
+    def to_safe_str(raw_str: Union[str, float, datetime, None]) -> str:
+        if raw_str is None:
+            return ''
+        new_str = str(raw_str)
+        for old, new in Table.special_str.items():
+            new_str = new_str.replace(old, new)
+        return new_str
+
+    def __str__(self) -> str:
+        if self.raw_str is None:
+            return ''
+        return self.raw_str
+
+
+class RowData:
+    def __init__(self):
+        self.cells: List[CellData] = []
+
+    def append(self, cell: CellData):
+        self.cells.append(cell)
+
+    def __iter__(self) -> Iterator[CellData]:
+        return (cell for cell in self.cells)
+
+
 class Table:
     special_str = {
         '\n': ';l/~',
@@ -317,7 +378,7 @@ class Table:
         table_name = sheet.title
         self.name = table_name
 
-        data: List[List[str]] = []
+        data: List[RowData] = []
         self.scheme: Optional[Scheme] = None
 
         field_names, field_defs = None, None
@@ -345,7 +406,7 @@ class Table:
 
         if self.scheme is None:
             raise Exception("invalid sheet file: " + sheet.title)
-        self.data: List[List[str]] = data
+        self.data: List[RowData] = data
 
     @staticmethod
     def try_read_field_names(row) -> Generator[str, Any, None]:
@@ -355,55 +416,15 @@ class Table:
     def try_read_field_defs(row) -> Generator[str, Any, None]:
         return (str(x) for x in row if x is not None and x != '')
 
-    def to_safe_str(self, raw_str: Union[str, LiteralString, Cell, None]) -> str:
-        if raw_str is None:
-            return ''
-        new_str = str(raw_str)
-        for old, new in self.special_str.items():
-            new_str = new_str.replace(old, new)
-        return new_str
-
-    def append_row(self, data: List[List[str]], row):
+    def append_row(self, data: List[RowData], row: Tuple[Union[str, float, datetime, None], ...]):
         assert isinstance(self.scheme, Scheme)
-        row_data: List[str] = []
+        row_data: RowData = RowData()
         count = len(self.scheme.fields)
         for index, cell in enumerate(row):
             if index < count:
-                self.append_cell(row_data, cell, self.scheme.fields[index])
+                cell_data = CellData(cell, self.scheme.fields[index])
+                row_data.append(cell_data)
         data.append(row_data)
-
-    def append_cell(self, row: List[str], cell: Cell, field: Field):
-        cell_str = self.to_safe_str(cell)
-        if isinstance(field, FieldPrimitive):
-            row.append(cell_str)
-        elif isinstance(field, FieldList):
-            if cell_str != '':
-                divisions = str.count(cell_str, ',') + 1
-                if isinstance(field.list_element_type, FieldStruct):
-                    prefix = str(divisions // len(field.list_element_type.struct_fields))
-                else:
-                    prefix = str(divisions)
-                row.append(prefix)
-                row.append(cell_str)
-            else:
-                row.append('0')
-        elif isinstance(field, FieldDictionary):
-            if cell_str != '':
-                divisions = str.count(cell_str, ',') + 1
-                if isinstance(field.dict_value_type, FieldStruct):
-                    prefix = str(divisions // (1 + len(field.dict_value_type.struct_fields)))
-                else:
-                    prefix = str(divisions // 2)
-                row.append(prefix)
-                row.append(cell_str)
-            else:
-                row.append('0')
-        elif isinstance(field, FieldStruct):
-            row.append(cell_str)
-        elif isinstance(field, FieldEnum):
-            row.append(cell_str)
-        else:
-            raise Exception('syntax error:' + field.field_def)
 
 
 class TableReader:
@@ -451,6 +472,7 @@ class TableWriter(ABC):
         self.env.globals['name_space'] = self.name_space
         self.env.filters['upper_camel_case'] = upper_camel_case
         self.env.filters['plural_form'] = plural_form
+        self.env.filters['get_display_def'] = partial(self.get_display_def)
 
     @staticmethod
     def ensure_path(path: str):
@@ -472,7 +494,7 @@ class TableWriter(ABC):
 
     @staticmethod
     def pack_table_data(table: Table) -> str:
-        data_arr = [str.join(",", row) for row in table.data]
+        data_arr = (str.join(",", (str(cell) for cell in row)) for row in table.data)
         return str.join('\n', data_arr)
 
     @abstractmethod
@@ -481,6 +503,10 @@ class TableWriter(ABC):
 
     @abstractmethod
     def get_script_file_ext(self) -> str:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_display_def(self, filed: Field) -> str:
         raise NotImplementedError()
 
     @abstractmethod

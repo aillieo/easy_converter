@@ -20,7 +20,7 @@
 
 {%  macro format_list(raw_data, field) -%}
     {
-        {%- for element in raw_data.split(',')[1:] -%}
+        {%- for element in raw_data.raw_str.split(',')[1:] -%}
             {{ format_data(element, field.list_element_type) }}
             {%- if not loop.last -%}
                 ,
@@ -31,7 +31,7 @@
 
 {%  macro format_dict(raw_data, field) -%}
     {
-        {%- for element in raw_data.split(',')[1:] -%}
+        {%- for element in raw_data.raw_str.split(',')[1:] -%}
             {%- if loop.index0 % 2 == 0 -%}
                 {%- with key_field = field.dict_key_type -%}
                     {%- if key_field.field_type == FieldType.Primitive and key_field.field_def == "string" -%}
@@ -52,7 +52,7 @@
 
 {%  macro format_struct(raw_data, field) -%}
     {
-        {%- for struct_data, struct_field in zip(raw_data.split(','), field.struct_fields) -%}
+        {%- for struct_data, struct_field in zip(raw_data.raw_str.split(','), field.struct_fields) -%}
             {{ struct_field.field_name }}={{ format_data(struct_data, struct_field) }}
             {%- if not loop.last -%}
                 ,
@@ -63,7 +63,7 @@
 
 {%  macro format_enum(raw_data, field) -%}
     {% for enum_field_value in field.enum_values %}
-        {%- if enum_field_value.enum_name == raw_data -%}
+        {%- if enum_field_value.enum_name == raw_data.raw_str -%}
             {{ enum_field_value.enum_value }}
         {%- endif -%}
     {% endfor %}

@@ -1,0 +1,48 @@
+{% import 'macros.j2' as macros %}
+
+#pragma once
+#include <string>
+#include <vector>
+#include <unordered_map>
+class DataBuffer;
+namespace {{ name_space }} {
+
+    {% for struct in table.get_associated_structs() %}
+
+        class {{ struct.field_name | upper_camel_case }}
+        {
+            public:
+                {% for field in struct.struct_fields %}
+                    {{ macros.field_type_name(field) }} {{ field.field_name }};
+                {% endfor %}
+
+                {{ struct.field_name | upper_camel_case }}(DataBuffer* buffer);
+
+                std::string toString();
+        };
+
+    {% endfor %}
+
+    {% for enum in table.get_associated_enums() %}
+
+        enum class {{ enum.field_def }}
+        {
+            {% for enum_field_value in enum.enum_values %}
+                {{ enum_field_value.enum_name }} = {{ enum_field_value.enum_value }},
+            {% endfor %}
+        };
+    {% endfor %}
+
+    class {{ table.name }}
+    {
+    public:
+
+        {% for field in table.fields %}
+            {{ macros.field_type_name(field) }} {{ field.field_name }};
+        {% endfor %}
+
+        {{ table.name }}(DataBuffer* buffer);
+
+        std::string toString();
+    };
+}

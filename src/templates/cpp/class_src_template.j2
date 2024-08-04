@@ -1,0 +1,79 @@
+{% import 'macros.j2' as macros %}
+
+{% macro read_field(field) -%}
+    {%- if field.field_type == FieldType.Primitive -%}
+        buffer->Read{{ field.field_def | upper_camel_case }}();
+    {%- elif field.field_type == FieldType.List -%}
+        {{ read_list(field) }}
+    {%- elif field.field_type == FieldType.Dictionary -%}
+        {{ read_dict(field) }}
+    {%- elif field.field_type == FieldType.Struct -%}
+        new {{ field.field_def }}(buffer);
+    {%- elif field.field_type == FieldType.Enum -%}
+        {{ field.field_def }}.valueOf(buffer.ReadInt());
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro read_list(field) %}
+    this->{{ field.field_name }} = new {{ macros.field_type_name(field) }}();
+    int {{ field.field_name }}Len = buffer.ReadInt();
+    for(int i = 0; i < {{ field.field_name }}Len; ++i)
+    {
+        auto item = {{ read_field(field.list_element_type) }}
+        this->{{ field.field_name }}.add(item);
+    }
+{% endmacro %}
+
+{% macro read_dict(field) %}
+    this->{{ field.field_name }} = new {{ macros.field_type_name(field) }}();
+    int {{ field.field_name }}Len = buffer.ReadInt();
+    for(int i = 0; i < {{ field.field_name }}Len; ++i)
+    {
+        auto key = {{ read_field(field.dict_key_type) }}
+        auto value = {{ read_field(field.dict_value_type) }}
+        this->{{ field.field_name }}.put(key, value);
+    }
+{% endmacro %}
+
+
+
+
+
+
+
+
+#include "DataBuffer.h"
+#include "{{ table.name }}.hpp"
+namespace {{ name_space }}{
+    {{ table.name }}::{{ table.name }}(DataBuffer* buffer)
+    {
+        {% for field in table.fields %}
+            {% if field.field_type == FieldType.List or field.field_type == FieldType.Dictionary %}
+                {{ read_field(field) }}
+            {% else %}
+                this->{{ field.field_name }} = {{ read_field(field) }}
+            {% endif %}
+        {% endfor %}
+    }
+
+    std::string {{ table.name }}::toString()
+    {
+        return "";
+    }
+
+    {% for struct in table.get_associated_structs() %}
+
+        public {{ struct.field_name | upper_camel_case }}::{{ struct.field_name | upper_camel_case }}(DataBuffer buffer)
+        {
+            {% for field in struct.struct_fields %}
+                this->{{ field.field_name }} = {{ read_field(field) }}
+            {% endfor %}
+        }
+
+        std::string {{ struct.field_name | upper_camel_case }}::toString()
+        {
+            return "";
+        }
+
+    {% endfor %}
+}

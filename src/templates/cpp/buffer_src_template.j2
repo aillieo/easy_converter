@@ -1,0 +1,81 @@
+#include <string>
+#include "DataBuffer.hpp"
+
+namespace {{ name_space }} {
+
+    static const char* strN = "{table_special_str_n}";
+    static const char* strS = "{table_special_str_s}";
+
+    std::string replacestr(std::string rawstr, std::string oldstr, std::string newstr)
+    {
+        std::string dst_str = rawstr;
+        std::string::size_type pos = 0;
+        while ((pos = dst_str.find(oldstr)) != std::string::npos)
+        {
+            dst_str.replace(pos, oldstr.length(), newstr);
+        }
+        return dst_str;
+    }
+
+    DataBuffer::DataBuffer(std::string source)
+    {
+        this->data = source;
+        this->index = 0;
+    }
+
+    std::string DataBuffer::ReadRaw()
+    {
+        int pos = index;
+        while (pos < this->data.length() && this->data[pos] != ',')
+        {
+            pos++;
+        }
+        std::string ret = this->data.substr(index, pos - index);
+        index = pos + 1;
+        return ret;
+    }
+
+    int DataBuffer::ReadInt()
+    {
+        return stoi(ReadRaw());
+    }
+
+    long DataBuffer::ReadLong()
+    {
+        return stol(ReadRaw());
+    }
+
+    float DataBuffer::ReadFloat()
+    {
+        return stof(ReadRaw());
+    }
+
+    double DataBuffer::ReadDouble()
+    {
+        return stod(ReadRaw());
+    }
+
+    bool DataBuffer::ReadBool()
+    {
+        std::string raw = ReadRaw();
+        if (raw == "true")
+        {
+            return true;
+        }
+
+        for (int i = 0; i < raw.length(); ++i)
+        {
+            raw[i] = tolower(i);
+        }
+
+        return raw == "true";
+    }
+
+    std::string DataBuffer::ReadString()
+    {
+        std::string s = ReadRaw();
+        s = replacestr(s, strN, "\\n");
+        s = replacestr(s, strS, ",");
+        return s;
+    }
+}

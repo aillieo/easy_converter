@@ -1,0 +1,102 @@
+{% import 'macros.j2' as macros %}
+
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include "TableManager.hpp"
+#include "DataBuffer.hpp"
+
+{% for table in tables %}
+     #include "{{ table.scheme.name }}.hpp"
+{% endfor %}
+
+namespace {{ name_space }}{
+
+    {% for table in tables %}
+        {% with key_field = table.scheme.fields | first %}
+            std::unordered_map<{{ macros.field_type_name(key_field) | trim }},{{ table.scheme.name }}> TableManager::dict{{ table.scheme.name }} = std::unordered_map<{{ macros.field_type_name(key_field) | trim }},{{ table.scheme.name }}>();
+        {% endwith %}
+    {% endfor %}
+
+    std::vector<std::string> splitstr(const std::string& str, const char sep = ',')
+    {
+        std::vector<std::string> result = std::vector<std::string>();
+        int start = 0;
+        int end = str.find(sep);
+        while (end != -1)
+        {
+            result.push_back(str.substr(start, end - start));
+            start = end + 1;
+            end = str.find(sep, start);
+        }
+        result.push_back(str.substr(start, end - start));
+        return result;
+    }
+
+    std::vector<std::string> splitstr(const std::string& str, const std::string sep = ",")
+    {
+        std::vector<std::string> result = std::vector<std::string>();
+        int start = 0;
+        int end = str.find(sep);
+        int seplen = sep.length();
+        while (end != -1)
+        {
+            result.push_back(str.substr(start, end - start));
+            start = seplen;
+            end = str.find(sep, start);
+        }
+        result.push_back(str.substr(start, end - start));
+        return result;
+    }
+
+    bool TableManager::LoadData(std::function<std::string(std::string)> dataProvider)
+    {
+        {% for table in tables %}
+            LoadDataFor{{ table.scheme.name }}(dataProvider);
+        {% endfor %}
+
+        return true;
+    }
+
+    {% for table in tables %}
+        {% with key_field = table.scheme.fields | first %}
+            bool TableManager::LoadDataFor{{ table.scheme.name }}(std::function<std::string(std::string)> dataProvider)
+            {
+                std::string dataStr = dataProvider("{{ table.scheme.name }}");
+                std::vector<std::string> dataArr = splitstr(dataStr, '\\n');
+                for (auto str : dataArr)
+                {
+                    if (str.empty())
+                    {
+                        continue;
+                    }
+                    {{ table.scheme.name }} table = {{ table.scheme.name }}(new DataBuffer(str));
+                    dict{{ table.scheme.name }}.emplace(table.{{ key_field.field_name }}, table);
+                }
+                return true;
+            }
+        {% endwith %}
+    {% endfor %}
+
+    {% for table in tables %}
+        {% set key_field = table.scheme.fields | first %}
+        {% set table_name = table.scheme.name %}
+        {% set table_name_plural = table.scheme.name | plural_form %}
+
+        {{ table_name }} TableManager::Get{{ table_name }}({{ key_field.field_def }} id)
+        {
+            std::unordered_map<int, {{ table_name }}>::iterator o = dict{{ table_name }}.find(id);
+            if (o != dict{{ table_name }}.end())
+            {
+                return o->second;
+            }
+            return nullptr;
+        }
+
+        std::unordered_map<{{ macros.field_type_name(key_field) | trim }},{{ table_name }}> TableManager::GetAll{{ table_name_plural }}()
+        {
+            return dict{{ table_name }};
+        }
+
+    {% endfor %}
+}
