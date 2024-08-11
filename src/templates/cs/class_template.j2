@@ -1,13 +1,3 @@
-{% macro field_type_name(field) -%}
-    {%- if field.field_type == FieldType.List -%}
-        List<{{ field_type_name(field.list_element_type) | trim }}>
-    {%- elif field.field_type == FieldType.Dictionary -%}
-        Dictionary<{{ field_type_name(field.dict_key_type) | trim }},{{ field_type_name(field.dict_value_type) | trim }}>
-    {%- else -%}
-        {{ field.field_def }}
-    {%- endif -%}
-{%- endmacro %}
-
 {% macro read_field(field) -%}
     {%- if field.field_type == FieldType.Primitive -%}
         buffer.Read{{ field.field_def | upper_camel_case }}();
@@ -23,7 +13,7 @@
 {%- endmacro %}
 
 {% macro read_list(field) %}
-    this.{{ field.field_name }} = new {{ field_type_name(field) }}();
+    this.{{ field.field_name }} = new {{ get_display_def(field) }}();
     int {{ field.field_name }}Len = buffer.ReadInt();
     for(int i = 0; i < {{ field.field_name }}Len; ++i)
     {
@@ -33,7 +23,7 @@
 {% endmacro %}
 
 {% macro read_dict(field) %}
-    this.{{ field.field_name }} = new {{ field_type_name(field) }}();
+    this.{{ field.field_name }} = new {{ get_display_def(field) }}();
     int {{ field.field_name }}Len = buffer.ReadInt();
     for(int i = 0; i < {{ field.field_name }}Len; ++i)
     {
@@ -50,7 +40,7 @@ namespace {{ name_space }}
     public class {{ table.name }}
     {
         {% for field in table.fields %}
-        public readonly {{ field_type_name(field) }} {{ field.field_name }};
+        public readonly {{ get_display_def(field) }} {{ field.field_name }};
         {% endfor %}
 
         public {{ table.name }}(DataBuffer buffer)
@@ -74,7 +64,7 @@ namespace {{ name_space }}
             public class {{ struct.field_name | upper_camel_case }}
             {
                 {% for field in struct.struct_fields %}
-                    public readonly {{ field_type_name(field) }} {{ field.field_name }};
+                    public readonly {{ get_display_def(field) }} {{ field.field_name }};
                 {% endfor %}
 
                 public {{ struct.field_name | upper_camel_case }}(DataBuffer buffer)

@@ -1,7 +1,6 @@
 
 
 
-
 using System.Collections.Generic;
 
 namespace EasyConverter
@@ -12,7 +11,7 @@ namespace EasyConverter
         public readonly string name;
         public readonly int quality;
         public readonly List<int> skills;
-        public readonly Dictionary<string,int> attribute;
+        public readonly Dictionary<string, int> attribute;
         public readonly Weapon weapon;
         public readonly State state;
 
@@ -29,7 +28,7 @@ namespace EasyConverter
         this.skills.Add(item);
     }
 
-                        this.attribute = new Dictionary<string,int>();
+                        this.attribute = new Dictionary<string, int>();
     int attributeLen = buffer.ReadInt();
     for(int i = 0; i < attributeLen; ++i)
     {

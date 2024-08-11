@@ -472,7 +472,7 @@ class TableWriter(ABC):
         self.env.globals['name_space'] = self.name_space
         self.env.filters['upper_camel_case'] = upper_camel_case
         self.env.filters['plural_form'] = plural_form
-        self.env.filters['get_display_def'] = partial(self.get_display_def)
+        self.env.globals['get_display_def'] = partial(self.get_display_def)
 
     @staticmethod
     def ensure_path(path: str):

@@ -1,7 +1,6 @@
 
 
 
-
 using System.Collections.Generic;
 
 namespace EasyConverter
@@ -11,14 +10,14 @@ namespace EasyConverter
         public readonly int id;
         public readonly string name;
         public readonly int cd;
-        public readonly Dictionary<int,int> buff_probability;
+        public readonly Dictionary<int, int> buff_probability;
 
         public Skill(DataBuffer buffer)
         {
                     this.id = buffer.ReadInt();
                     this.name = buffer.ReadString();
                     this.cd = buffer.ReadInt();
-                        this.buff_probability = new Dictionary<int,int>();
+                        this.buff_probability = new Dictionary<int, int>();
     int buff_probabilityLen = buffer.ReadInt();
     for(int i = 0; i < buff_probabilityLen; ++i)
     {

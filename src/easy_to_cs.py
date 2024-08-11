@@ -12,6 +12,14 @@ class CSharpWriter(TableWriter):
     def get_template_file_dir(self) -> str:
         return "templates/cs"
 
+    def get_display_def(self, field: Field):
+        if isinstance(field, FieldList):
+            return f"List<{self.get_display_def(field.list_element_type)}>"
+        elif isinstance(field, FieldDictionary):
+            return f"Dictionary<{self.get_display_def(field.dict_key_type)}, {self.get_display_def(field.dict_value_type)}>"
+        else:
+            return field.field_def
+
     def convert_misc(self, tables: List[Table], context: Dict[str, Any]):
 
         context.update({
