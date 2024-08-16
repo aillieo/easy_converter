@@ -9,8 +9,8 @@ namespace {{ name_space }}
             {% with key_field = table.scheme.fields | first %}
                 {% if key_field.field_type == FieldType.Primitive %}
                     private static Dictionary<{{ key_field.field_def }},{{ table.scheme.name }}> dict{{ table.scheme.name }} = new Dictionary<{{ key_field.field_def }},{{ table.scheme.name }}>();
-                {% elif key_field.field_type == FieldType.Primitive %}
-                    private static Dictionary<{{ key_field.field_def }},{{ table.scheme.name }}> dict{{ table.scheme.name }} = new Dictionary<{{ key_field.field_def }},{{ table.scheme.name }}>();
+                {% elif key_field.field_type == FieldType.Enum %}
+                    private static Dictionary<{{ get_display_def(key_field) }},{{ table.scheme.name }}> dict{{ table.scheme.name }} = new Dictionary<{{ get_display_def(key_field) }},{{ table.scheme.name }}>();
                 {% endif %}
             {% endwith %}
         {% endfor %}
@@ -49,12 +49,12 @@ namespace {{ name_space }}
             {% set table_name = table.scheme.name %}
             {% set table_name_plural = table.scheme.name | plural_form %}
 
-            public static Dictionary<{{ key_field.field_def }},{{ table_name }}> GetAll{{ table_name_plural }}()
+            public static Dictionary<{{ get_display_def(key_field) }},{{ table_name }}> GetAll{{ table_name_plural }}()
             {
                 return dict{{ table_name }};
             }
 
-            public static {{ table_name }} Get{{ table_name }}({{ key_field.field_def }} id)
+            public static {{ table_name }} Get{{ table_name }}({{ get_display_def(key_field) }} id)
             {
                 if (dict{{ table_name }}.TryGetValue(id, out var value))
                 {

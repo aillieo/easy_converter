@@ -8,7 +8,9 @@
     {%- elif field.field_type == FieldType.Struct -%}
         new {{ field.field_def }}(buffer);
     {%- elif field.field_type == FieldType.Enum -%}
-        buffer.ReadEnum<{{ field.field_def }}>();
+        buffer.ReadEnum<{{ get_display_def(field) }}>();
+    {%- elif field.field_type == FieldType.Reference -%}
+        {{ read_field(field.ref_type) }}
     {%- endif -%}
 {%- endmacro %}
 

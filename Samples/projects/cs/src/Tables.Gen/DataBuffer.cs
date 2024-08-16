@@ -62,13 +62,8 @@ namespace EasyConverter
 
         public T ReadEnum<T>() where T : struct
         {
-            string name = ReadString();
-            if (Enum.TryParse(name, out T e))
-            {
-                return e;
-            }
-
-            throw new Exception($"invalid enum name for {typeof(T).Name}: {name}");
+            int value = ReadInt();
+            return (T)Enum.ToObject(typeof(T), value);
         }
     }
 }

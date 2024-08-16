@@ -16,7 +16,13 @@ class CSharpWriter(TableWriter):
         if isinstance(field, FieldList):
             return f"List<{self.get_display_def(field.list_element_type)}>"
         elif isinstance(field, FieldDictionary):
-            return f"Dictionary<{self.get_display_def(field.dict_key_type)}, {self.get_display_def(field.dict_value_type)}>"
+            display_def_for_key = self.get_display_def(field.dict_key_type)
+            display_def_for_value = self.get_display_def(field.dict_value_type)
+            return f"Dictionary<{display_def_for_key}, {display_def_for_value}>"
+        elif isinstance(field, FieldStruct) or isinstance(field, FieldEnum):
+            return f"{field.table_name}.{field.field_def}"
+        elif isinstance(field, FieldReference):
+            return self.get_display_def(field.ref_type)
         else:
             return field.field_def
 

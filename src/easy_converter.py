@@ -13,7 +13,6 @@ from argparse import ArgumentParser
 import inflect
 from jinja2 import Environment, FileSystemLoader
 from typing import List, Tuple, Union, Any, Generator, Optional, Iterator
-from typing_extensions import LiteralString
 from functools import partial
 
 
@@ -23,7 +22,7 @@ def upper_camel_case(var_name: str) -> str:
     return var_name[0].upper() + var_name[1:]
 
 
-def split_last_word(var_name: str) -> Tuple[Union[LiteralString, str], Any, Any]:
+def split_last_word(var_name: str) -> Tuple[str, Any, Any]:
     splits = re_camel_split.findall(var_name)
     last_word = splits[-1]
     rest_part = ""
@@ -34,13 +33,13 @@ def split_last_word(var_name: str) -> Tuple[Union[LiteralString, str], Any, Any]
     return rest_part, last_word, capitalized
 
 
-e = inflect.engine()
+engine = inflect.engine()
 re_camel_split = re.compile(r"^[a-z]+|[A-Z][^A-Z]*")
 
 
 def plural_form(singular_form_name):
     rest_part, last_word, capitalized = split_last_word(singular_form_name)
-    last_word = e.plural_noun(last_word)
+    last_word = engine.plural_noun(last_word)
     if capitalized:
         last_word = last_word.title()
     return rest_part + last_word
@@ -48,7 +47,9 @@ def plural_form(singular_form_name):
 
 def singular_form(plural_form_name):
     rest_part, last_word, capitalized = split_last_word(plural_form_name)
-    last_word = e.singular_noun(last_word)
+    singular = engine.singular_noun(last_word)
+    if singular is not False:
+        last_word = singular
     if capitalized:
         last_word = last_word.title()
     return rest_part + last_word
@@ -64,6 +65,7 @@ class TokenType(Enum):
     BeginEnum = 1 << 6
     Number = 1 << 7
     Comma = 1 << 8
+    Reference = 1 << 9
 
 
 class Token:
@@ -75,6 +77,7 @@ class Token:
         'Enum<': TokenType.BeginEnum,
         '>': TokenType.ClosingBracket,
         ',': TokenType.Comma,
+        '@': TokenType.Reference,
     }
     re_variable_name = re.compile(r"^\w+\d*$")
 
@@ -103,7 +106,7 @@ class EnumFieldValue:
 
 
 class FieldParser:
-    re_token = re.compile(r'[\d\w]+<?|[>,]')
+    re_token = re.compile(r'\w+<?|[>,@]')
 
     def __init__(self, table_name: str, field_name: str, field_def: str):
         self.table_name: str = table_name
@@ -111,7 +114,7 @@ class FieldParser:
         self.field_def: str = field_def
         self.tokens: List[Token] = self.tokenize()
         self.cursor: int = 0
-        self.field_info: Field = self.parse_field_info(self.field_name)
+        self.__field_info: Field = self.parse_field_info(self.field_name)
         if self.cursor != len(self.tokens):
             raise Exception("")
 
@@ -119,7 +122,7 @@ class FieldParser:
         # print(self.field_def)
         return [Token(t) for t in self.re_token.findall(self.field_def)]
 
-    def parse_field_info(self, field_name):
+    def parse_field_info(self, field_name: str) -> 'Field':
         if self.cursor >= len(self.tokens):
             raise Exception("")
         token = self.tokens[self.cursor]
@@ -133,14 +136,16 @@ class FieldParser:
             return self.parse_struct(field_name)
         elif token.token_type == TokenType.BeginEnum:
             return self.parse_enum(field_name)
+        elif token.token_type == TokenType.Reference:
+            return self.parse_reference(field_name)
         raise Exception(token.token_type)
 
-    def parse_primitive(self, field_name):
+    def parse_primitive(self, field_name: str) -> 'FieldPrimitive':
         token = self.tokens[self.cursor]
         self.cursor += 1
         return FieldPrimitive(field_name, token.value)
 
-    def parse_list(self, field_name):
+    def parse_list(self, field_name: str) -> 'FieldList':
         self.cursor += 1
         element_type = self.parse_field_info(singular_form(field_name))
         token = self.tokens[self.cursor]
@@ -148,7 +153,7 @@ class FieldParser:
         self.cursor += 1
         return FieldList(field_name, element_type)
 
-    def parse_dictionary(self, field_name):
+    def parse_dictionary(self, field_name: str) -> 'FieldDictionary':
         self.cursor += 1
         key_type = self.parse_field_info('')
         token = self.tokens[self.cursor]
@@ -160,7 +165,7 @@ class FieldParser:
         self.cursor += 1
         return FieldDictionary(field_name, key_type, value_type)
 
-    def parse_struct(self, field_name):
+    def parse_struct(self, field_name: str) -> 'FieldStruct':
         self.cursor += 1
         struct_fields = []
         while True:
@@ -184,7 +189,7 @@ class FieldParser:
         self.cursor += 1
         return FieldStruct(self.table_name, field_name, struct_fields)
 
-    def parse_enum(self, field_name):
+    def parse_enum(self, field_name: str) -> 'FieldEnum':
         self.cursor += 1
         enum_values = []
         while True:
@@ -211,8 +216,24 @@ class FieldParser:
         self.cursor += 1
         return FieldEnum(self.table_name, field_name, enum_values)
 
-    def get_field_info(self):
-        return self.field_info
+    def parse_reference(self, field_name: str) -> 'FieldReference':
+        self.cursor += 1
+        token = self.tokens[self.cursor]
+        assert token.token_type == TokenType.VariableName
+        ref_table_name = token.value
+        self.cursor += 1
+        token = self.tokens[self.cursor]
+        assert token.token_type == TokenType.Comma
+        self.cursor += 1
+        token = self.tokens[self.cursor]
+        assert token.token_type == TokenType.VariableName
+        ref_type_name = token.value
+        self.cursor += 1
+        return FieldReference(field_name, ref_table_name, ref_type_name)
+
+    @property
+    def field_info(self):
+        return self.__field_info
 
 
 class FieldType(Enum):
@@ -221,6 +242,7 @@ class FieldType(Enum):
     Dictionary = 3
     Struct = 4
     Enum = 5
+    Reference = 6
 
 
 class Field:
@@ -228,6 +250,15 @@ class Field:
         self.field_name: str = field_name
         self.field_def: str = field_def
         self.field_type: Optional[FieldType] = None
+
+    def get_associated_structs(self) -> Iterator["FieldStruct"]:
+        yield from ()
+
+    def get_associated_enums(self) -> Iterator["FieldEnum"]:
+        yield from ()
+
+    def get_associated_references(self) -> Iterator["FieldReference"]:
+        yield from ()
 
 
 class FieldPrimitive(Field):
@@ -242,6 +273,15 @@ class FieldList(Field):
         self.field_type = FieldType.List
         self.list_element_type = element_type
 
+    def get_associated_structs(self) -> Iterator["FieldStruct"]:
+        yield from self.list_element_type.get_associated_structs()
+
+    def get_associated_enums(self) -> Iterator["FieldEnum"]:
+        yield from self.list_element_type.get_associated_enums()
+
+    def get_associated_references(self) -> Iterator["FieldReference"]:
+        yield from self.list_element_type.get_associated_references()
+
 
 class FieldDictionary(Field):
     def __init__(self, field_name: str, key_type: Field, value_type: Field):
@@ -249,6 +289,18 @@ class FieldDictionary(Field):
         self.field_type = FieldType.Dictionary
         self.dict_key_type: Field = key_type
         self.dict_value_type: Field = value_type
+
+    def get_associated_structs(self) -> Iterator["FieldStruct"]:
+        yield from self.dict_key_type.get_associated_structs()
+        yield from self.dict_value_type.get_associated_structs()
+
+    def get_associated_enums(self) -> Iterator["FieldEnum"]:
+        yield from self.dict_key_type.get_associated_enums()
+        yield from self.dict_value_type.get_associated_enums()
+
+    def get_associated_references(self) -> Iterator["FieldReference"]:
+        yield from self.dict_key_type.get_associated_references()
+        yield from self.dict_value_type.get_associated_references()
 
 
 class FieldStruct(Field):
@@ -261,6 +313,19 @@ class FieldStruct(Field):
         self.field_type = FieldType.Struct
         self.struct_fields: List[Field] = struct_fields
 
+    def get_associated_structs(self) -> Iterator["FieldStruct"]:
+        yield self
+        for f in self.struct_fields:
+            yield from f.get_associated_structs()
+
+    def get_associated_enums(self) -> Iterator["FieldEnum"]:
+        for f in self.struct_fields:
+            yield from f.get_associated_enums()
+
+    def get_associated_references(self) -> Iterator["FieldReference"]:
+        for f in self.struct_fields:
+            yield from f.get_associated_references()
+
 
 class FieldEnum(Field):
     def __init__(self, table_name: str, field_name: str, enum_values: List[EnumFieldValue]):
@@ -271,75 +336,81 @@ class FieldEnum(Field):
         super().__init__(field_name, field_def)
         self.field_type = FieldType.Enum
         self.enum_values = enum_values
+        self.enum_key_to_value = {item.enum_name: item.enum_value for item in enum_values}
+
+    def get_associated_enums(self) -> Iterator["FieldEnum"]:
+        yield self
+
+
+class FieldReference(Field):
+    def __init__(self, field_name: str, ref_table_name: str, ref_type_name: str):
+        super().__init__(field_name, '')
+        self.field_type = FieldType.Reference
+        self.ref_table_name: str = ref_table_name
+        self.ref_type_name: str = ref_type_name
+        self.ref_type: Optional[Field] = None
+
+    def get_associated_references(self) -> Iterator["FieldReference"]:
+        yield self
 
 
 class Scheme:
 
-    def __init__(self, name: str, fields: List[Field]):
+    def __init__(self, name: str, field_pairs: Iterator[Tuple[str, str]]):
         self.full_name: str = name
         self.name: str = name
-        self.fields: List[Field] = fields
+        self.fields: List[Field] = self.populate_fields(field_pairs)
 
-    def get_associated_structs(self) -> List[FieldStruct]:
+    def populate_fields(self, field_pairs: Iterator[Tuple[str, str]]) -> List[Field]:
+        fields: List[Field] = []
+        for field_name, field_def in field_pairs:
+            parser = FieldParser(self.name, field_name, field_def)
+            fields.append(parser.field_info)
+        return fields
+
+    def get_associated_structs(self) -> List["FieldStruct"]:
         structs = []
-        for x in self.fields:
-            if isinstance(x, FieldStruct):
-                structs.append(x)
-            elif isinstance(x, FieldList) and isinstance(x.list_element_type, FieldStruct):
-                structs.append(x.list_element_type)
-            elif isinstance(x, FieldDictionary):
-                if isinstance(x.dict_value_type, FieldStruct):
-                    structs.append(x.dict_value_type)
+        for f in self.fields:
+            structs.extend(f.get_associated_structs())
         return structs
 
-    def get_associated_enums(self) -> List[FieldEnum]:
+    def get_associated_enums(self) -> List['FieldEnum']:
         enums = []
-        for x in self.fields:
-            if isinstance(x, FieldEnum):
-                enums.append(x)
-            elif isinstance(x, FieldList) and isinstance(x.list_element_type, FieldEnum):
-                enums.append(x.list_element_type)
-            elif isinstance(x, FieldDictionary):
-                if isinstance(x.dict_key_type, FieldEnum):
-                    enums.append(x.dict_key_type)
-                if isinstance(x.dict_value_type, FieldEnum):
-                    enums.append(x.dict_value_type)
-
+        for f in self.fields:
+            enums.extend(f.get_associated_enums())
         return enums
+
+    def get_associated_references(self) -> List['FieldReference']:
+        references = []
+        for f in self.fields:
+            references.extend(f.get_associated_references())
+        return references
 
 
 class CellData:
     def __init__(self, raw_cell: Union[str, float, datetime, None], field: Field):
-        raw_str = self.to_safe_str(raw_cell)
         self.field = field
-        if isinstance(field, FieldPrimitive):
-            self.raw_str = raw_str
-        elif isinstance(field, FieldList):
-            if raw_str != '':
-                divisions = str.count(raw_str, ',') + 1
-                if isinstance(field.list_element_type, FieldStruct):
-                    prefix = str(divisions // len(field.list_element_type.struct_fields))
-                else:
-                    prefix = str(divisions)
-                self.raw_str = raw_str = prefix + ',' + raw_str
-            else:
-                self.raw_str = '0'
+        self.raw_str = self.cell_to_str(raw_cell, field)
+
+    @staticmethod
+    def cell_to_elements(raw_cell, field):
+        if raw_cell is None or raw_cell == '':
+            return []
+        if isinstance(field, FieldList):
+            elements = raw_cell.split(',')
+            sub_element_size = 1
+            if isinstance(field.list_element_type, FieldStruct):
+                sub_element_size = len(field.list_element_type.struct_fields)
+            return [','.join(elements[i:i + sub_element_size])
+                    for i in range(0, len(elements), sub_element_size)]
         elif isinstance(field, FieldDictionary):
-            if raw_str != '':
-                divisions = str.count(raw_str, ',') + 1
-                if isinstance(field.dict_value_type, FieldStruct):
-                    prefix = str(divisions // (1 + len(field.dict_value_type.struct_fields)))
-                else:
-                    prefix = str(divisions // 2)
-                self.raw_str = raw_str = prefix + ',' + raw_str
-            else:
-                self.raw_str = '0'
-        elif isinstance(field, FieldStruct):
-            self.raw_str = raw_str
-        elif isinstance(field, FieldEnum):
-            self.raw_str = raw_str
-        else:
-            raise Exception('syntax error:' + field.field_def)
+            elements = raw_cell.split(',')
+            sub_element_size = 1
+            if isinstance(field.dict_value_type, FieldStruct):
+                sub_element_size = len(field.dict_value_type.struct_fields)
+            return [(elements[i], ','.join(elements[i + 1: i + 1 + sub_element_size]))
+                    for i in range(0, len(elements), sub_element_size + 1)]
+        return [raw_cell]
 
     @staticmethod
     def to_safe_str(raw_str: Union[str, float, datetime, None]) -> str:
@@ -349,6 +420,46 @@ class CellData:
         for old, new in Table.special_str.items():
             new_str = new_str.replace(old, new)
         return new_str
+
+    @staticmethod
+    def cell_to_str(raw_cell: Union[str, float, datetime, None], field: Field) -> str:
+        if isinstance(field, FieldPrimitive):
+            return CellData.to_safe_str(raw_cell)
+        elif isinstance(field, FieldList):
+            if raw_cell != '':
+                elements = CellData.cell_to_elements(raw_cell, field)
+                raw_str = str(len(elements))
+                for ele in elements:
+                    raw_str = raw_str + ','
+                    raw_str = raw_str + CellData.cell_to_str(ele, field.list_element_type)
+                return raw_str
+            else:
+                return '0'
+        elif isinstance(field, FieldDictionary):
+            if raw_cell != '':
+                elements = CellData.cell_to_elements(raw_cell, field)
+                raw_str = str(len(elements))
+                for (k, v) in elements:
+                    raw_str = raw_str + ','
+                    raw_str = raw_str + CellData.cell_to_str(k, field.dict_key_type)
+                    raw_str = raw_str + ','
+                    raw_str = raw_str + CellData.cell_to_str(v, field.dict_value_type)
+                return raw_str
+            else:
+                return '0'
+        elif isinstance(field, FieldStruct):
+            return CellData.to_safe_str(raw_cell)
+        elif isinstance(field, FieldEnum):
+            enum_value = field.enum_key_to_value.get(raw_cell)
+            if enum_value is None:
+                raise Exception('invalid enum key:' + str(raw_cell))
+            else:
+                return str(enum_value)
+        elif isinstance(field, FieldReference):
+            assert field.ref_type is not None
+            return CellData.cell_to_str(raw_cell, field.ref_type)
+        else:
+            raise Exception('syntax error:' + str(type(field)))
 
     def __str__(self) -> str:
         if self.raw_str is None:
@@ -374,57 +485,35 @@ class Table:
     }
 
     def __init__(self, sheet: Worksheet):
+        self.__sheet: Worksheet = sheet
+        self.name = upper_camel_case(sheet.title)
 
-        table_name = sheet.title
-        self.name = table_name
+        field_names = self.try_read_field_names()
+        field_defs = self.try_read_field_defs()
 
-        data: List[RowData] = []
-        self.scheme: Optional[Scheme] = None
+        pairs: Iterator[Tuple[str, str]] = zip(field_names, field_defs)
+        self.scheme: Scheme = Scheme(self.name, pairs)
 
-        field_names, field_defs = None, None
+        self.data: List[RowData] = []
 
-        for row in sheet.iter_rows(values_only=True):
+    def try_read_field_names(self) -> Iterator[str]:
+        for row in self.__sheet.iter_rows(values_only=True, min_row=1, max_row=1):
+            return (str(x) for x in row if x is not None and x != '')
 
-            if len(row) == 0:
-                continue
+    def try_read_field_defs(self) -> Iterator[str]:
+        for row in self.__sheet.iter_rows(values_only=True, min_row=2, max_row=2):
+            return (str(x) for x in row if x is not None and x != '')
+
+    def populate_table_data(self) -> None:
+        columns = len(self.scheme.fields)
+        for row in self.__sheet.iter_rows(values_only=True, min_row=3, min_col=1, max_col=columns):
             if row[0] is None:
                 continue
-            if self.scheme is None:
-                if field_names is None:
-                    field_names = self.try_read_field_names(row)
-                    continue
-                if field_defs is None:
-                    field_defs = self.try_read_field_defs(row)
-                    continue
-                pairs = zip(field_names, field_defs)
-                fields = [FieldParser(table_name, field_name, field_def).get_field_info()
-                          for field_name, field_def in pairs]
-
-                self.scheme = Scheme(table_name, fields)
-
-            self.append_row(data, row)
-
-        if self.scheme is None:
-            raise Exception("invalid sheet file: " + sheet.title)
-        self.data: List[RowData] = data
-
-    @staticmethod
-    def try_read_field_names(row) -> Generator[str, Any, None]:
-        return (str(x) for x in row if x is not None and x != '')
-
-    @staticmethod
-    def try_read_field_defs(row) -> Generator[str, Any, None]:
-        return (str(x) for x in row if x is not None and x != '')
-
-    def append_row(self, data: List[RowData], row: Tuple[Union[str, float, datetime, None], ...]):
-        assert isinstance(self.scheme, Scheme)
-        row_data: RowData = RowData()
-        count = len(self.scheme.fields)
-        for index, cell in enumerate(row):
-            if index < count:
+            row_data: RowData = RowData()
+            for index, cell in enumerate(row):
                 cell_data = CellData(cell, self.scheme.fields[index])
                 row_data.append(cell_data)
-        data.append(row_data)
+            self.data.append(row_data)
 
 
 class TableReader:
@@ -450,7 +539,28 @@ class TableReader:
                     print(f"reading {os.path.basename(file)}:[{sheet.title}]...")
                     tables.append(Table(sheet))
         tables.sort(key=lambda t: t.name)
+        self.process_reference_types(tables)
+        for table in tables:
+            table.populate_table_data()
         return tables
+
+    def process_reference_types(self, tables: List[Table]):
+        sub_types = {}
+        for table in tables:
+            structs = table.scheme.get_associated_structs()
+            for s in structs:
+                full_name = s.table_name + "," + s.field_def
+                sub_types[full_name] = s
+            enums = table.scheme.get_associated_enums()
+            for e in enums:
+                full_name = e.table_name + "," + e.field_def
+                sub_types[full_name] = e
+        for table in tables:
+            references = table.scheme.get_associated_references()
+            for reference in references:
+                ref_type_full_name = reference.ref_table_name + "," + reference.ref_type_name
+                ref_type = sub_types.get(ref_type_full_name)
+                reference.ref_type = ref_type
 
 
 class TableWriter(ABC):
@@ -494,8 +604,8 @@ class TableWriter(ABC):
 
     @staticmethod
     def pack_table_data(table: Table) -> str:
-        data_arr = (str.join(",", (str(cell) for cell in row)) for row in table.data)
-        return str.join('\n', data_arr)
+        rows = (str.join(",", (str(cell) for cell in row)) for row in table.data)
+        return str.join('\n', rows)
 
     @abstractmethod
     def get_template_file_dir(self) -> str:

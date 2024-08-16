@@ -12,8 +12,8 @@ namespace EasyConverter
         public readonly int quality;
         public readonly List<int> skills;
         public readonly Dictionary<string, int> attribute;
-        public readonly Weapon weapon;
-        public readonly State state;
+        public readonly Hero.Weapon weapon;
+        public readonly Hero.State state;
 
         public Hero(DataBuffer buffer)
         {
@@ -38,7 +38,7 @@ namespace EasyConverter
     }
 
                     this.weapon = new Weapon(buffer);
-                    this.state = buffer.ReadEnum<State>();
+                    this.state = buffer.ReadEnum<Hero.State>();
         }
 
         public override string ToString()
