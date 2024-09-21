@@ -58,7 +58,11 @@ namespace {{ name_space }}
 
         public override string ToString()
         {
-            return "";
+            return $"{{ table.name }}{{"{{"}}
+                {%- for field in table.fields -%}
+                    {{ field.field_name }} = {this.{{ field.field_name }}},
+                {%- endfor -%}
+            {{"}}"}}";
         }
 
         {% for struct in table.get_associated_structs() %}
@@ -72,13 +76,17 @@ namespace {{ name_space }}
                 public {{ struct.field_name | upper_camel_case }}(DataBuffer buffer)
                 {
                     {% for field in struct.struct_fields %}
-                        {{ read_field(field) }}
+                        this.{{ field.field_name }} = {{ read_field(field) }}
                     {% endfor %}
                 }
 
                 public override string ToString()
                 {
-                    return "";
+                    return $"{{ struct.field_name | upper_camel_case }}{{"{{"}}
+                        {%- for field in struct.struct_fields -%}
+                            {{ field.field_name }} = {this.{{ field.field_name }} }
+                        {%- endfor -%}
+                    {{"}}"}}";
                 }
             }
 

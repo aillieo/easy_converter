@@ -8,11 +8,10 @@ from datetime import datetime
 from enum import Enum
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
-from openpyxl.cell.cell import Cell
 from argparse import ArgumentParser
 import inflect
 from jinja2 import Environment, FileSystemLoader
-from typing import List, Tuple, Union, Any, Generator, Optional, Iterator
+from typing import List, Tuple, Union, Any, Optional, Iterator
 from functools import partial
 
 
@@ -143,7 +142,7 @@ class FieldParser:
     def parse_primitive(self, field_name: str) -> 'FieldPrimitive':
         token = self.tokens[self.cursor]
         self.cursor += 1
-        return FieldPrimitive(field_name, token.value)
+        return FieldPrimitive(self.table_name, field_name, token.value)
 
     def parse_list(self, field_name: str) -> 'FieldList':
         self.cursor += 1
@@ -151,7 +150,7 @@ class FieldParser:
         token = self.tokens[self.cursor]
         assert token.token_type == TokenType.ClosingBracket
         self.cursor += 1
-        return FieldList(field_name, element_type)
+        return FieldList(self.table_name, field_name, element_type)
 
     def parse_dictionary(self, field_name: str) -> 'FieldDictionary':
         self.cursor += 1
@@ -163,7 +162,7 @@ class FieldParser:
         token = self.tokens[self.cursor]
         assert token.token_type == TokenType.ClosingBracket
         self.cursor += 1
-        return FieldDictionary(field_name, key_type, value_type)
+        return FieldDictionary(self.table_name, field_name, key_type, value_type)
 
     def parse_struct(self, field_name: str) -> 'FieldStruct':
         self.cursor += 1
@@ -229,7 +228,7 @@ class FieldParser:
         assert token.token_type == TokenType.VariableName
         ref_type_name = token.value
         self.cursor += 1
-        return FieldReference(field_name, ref_table_name, ref_type_name)
+        return FieldReference(self.table_name, field_name, ref_table_name, ref_type_name)
 
     @property
     def field_info(self):
@@ -246,7 +245,8 @@ class FieldType(Enum):
 
 
 class Field:
-    def __init__(self, field_name: str, field_def: str):
+    def __init__(self, table_name: str, field_name: str, field_def: str):
+        self.table_name: str = table_name
         self.field_name: str = field_name
         self.field_def: str = field_def
         self.field_type: Optional[FieldType] = None
@@ -260,16 +260,19 @@ class Field:
     def get_associated_references(self) -> Iterator["FieldReference"]:
         yield from ()
 
+    def cell_to_str(self, raw_cell: Union[str, float, datetime, None]) -> str:
+        return CellData.to_safe_str(raw_cell)
+
 
 class FieldPrimitive(Field):
-    def __init__(self, field_name: str, field_type: str):
-        super().__init__(field_name, field_type)
+    def __init__(self, table_name: str, field_name: str, field_type: str):
+        super().__init__(table_name, field_name, field_type)
         self.field_type = FieldType.Primitive
 
 
 class FieldList(Field):
-    def __init__(self, field_name: str, element_type: Field):
-        super().__init__(field_name, '')
+    def __init__(self, table_name: str, field_name: str, element_type: Field):
+        super().__init__(table_name, field_name, '')
         self.field_type = FieldType.List
         self.list_element_type = element_type
 
@@ -282,10 +285,21 @@ class FieldList(Field):
     def get_associated_references(self) -> Iterator["FieldReference"]:
         yield from self.list_element_type.get_associated_references()
 
+    def cell_to_str(self, raw_cell: Union[str, float, datetime, None]) -> str:
+        if raw_cell != '':
+            elements = CellData.cell_to_elements(raw_cell, self)
+            raw_str = str(len(elements))
+            for ele in elements:
+                raw_str = raw_str + ','
+                raw_str = raw_str + self.list_element_type.cell_to_str(ele)
+            return raw_str
+        else:
+            return '0'
+
 
 class FieldDictionary(Field):
-    def __init__(self, field_name: str, key_type: Field, value_type: Field):
-        super().__init__(field_name, '')
+    def __init__(self, table_name: str, field_name: str, key_type: Field, value_type: Field):
+        super().__init__(table_name, field_name, '')
         self.field_type = FieldType.Dictionary
         self.dict_key_type: Field = key_type
         self.dict_value_type: Field = value_type
@@ -302,14 +316,26 @@ class FieldDictionary(Field):
         yield from self.dict_key_type.get_associated_references()
         yield from self.dict_value_type.get_associated_references()
 
+    def cell_to_str(self, raw_cell: Union[str, float, datetime, None]) -> str:
+        if raw_cell != '':
+            elements = CellData.cell_to_elements(raw_cell, self)
+            raw_str = str(len(elements))
+            for (k, v) in elements:
+                raw_str = raw_str + ','
+                raw_str = raw_str + self.dict_key_type.cell_to_str(k)
+                raw_str = raw_str + ','
+                raw_str = raw_str + self.dict_value_type.cell_to_str(v)
+            return raw_str
+        else:
+            return '0'
+
 
 class FieldStruct(Field):
     def __init__(self, table_name: str, field_name: str, struct_fields: List[Field]):
-        self.table_name = table_name
         field_def = upper_camel_case(field_name)
         if field_def == field_name:
             field_def = 'S' + field_name
-        super().__init__(field_name, field_def)
+        super().__init__(table_name, field_name, field_def)
         self.field_type = FieldType.Struct
         self.struct_fields: List[Field] = struct_fields
 
@@ -326,6 +352,15 @@ class FieldStruct(Field):
         for f in self.struct_fields:
             yield from f.get_associated_references()
 
+    def cell_to_str(self, raw_cell: Union[str, float, datetime, None]) -> str:
+        raw_str = ''
+        elements = CellData.cell_to_elements(raw_cell, self)
+        for f, e in zip(self.struct_fields, elements):
+            if raw_str != '':
+                raw_str = raw_str + ','
+            raw_str = raw_str + f.cell_to_str(e)
+        return raw_str
+
 
 class FieldEnum(Field):
     def __init__(self, table_name: str, field_name: str, enum_values: List[EnumFieldValue]):
@@ -333,7 +368,7 @@ class FieldEnum(Field):
         field_def = upper_camel_case(field_name)
         if field_def == field_name:
             field_def = 'E' + field_name
-        super().__init__(field_name, field_def)
+        super().__init__(table_name, field_name, field_def)
         self.field_type = FieldType.Enum
         self.enum_values = enum_values
         self.enum_key_to_value = {item.enum_name: item.enum_value for item in enum_values}
@@ -341,10 +376,17 @@ class FieldEnum(Field):
     def get_associated_enums(self) -> Iterator["FieldEnum"]:
         yield self
 
+    def cell_to_str(self, raw_cell: Union[str, float, datetime, None]) -> str:
+        enum_value = self.enum_key_to_value.get(raw_cell)
+        if enum_value is None:
+            raise Exception('invalid enum key:' + str(raw_cell))
+        else:
+            return str(enum_value)
+
 
 class FieldReference(Field):
-    def __init__(self, field_name: str, ref_table_name: str, ref_type_name: str):
-        super().__init__(field_name, '')
+    def __init__(self, table_name: str, field_name: str, ref_table_name: str, ref_type_name: str):
+        super().__init__(table_name, field_name, '')
         self.field_type = FieldType.Reference
         self.ref_table_name: str = ref_table_name
         self.ref_type_name: str = ref_type_name
@@ -352,6 +394,11 @@ class FieldReference(Field):
 
     def get_associated_references(self) -> Iterator["FieldReference"]:
         yield self
+
+    def cell_to_str(self, raw_cell: Union[str, float, datetime, None]) -> str:
+        assert self.ref_type is not None, \
+            f'Reference not found: {self.ref_table_name},{self.ref_type_name} in {self.table_name},{self.field_name}'
+        return self.ref_type.cell_to_str(raw_cell)
 
 
 class Scheme:
@@ -390,27 +437,34 @@ class Scheme:
 class CellData:
     def __init__(self, raw_cell: Union[str, float, datetime, None], field: Field):
         self.field = field
-        self.raw_str = self.cell_to_str(raw_cell, field)
+        self.raw_str = field.cell_to_str(raw_cell)
 
     @staticmethod
     def cell_to_elements(raw_cell, field):
-        if raw_cell is None or raw_cell == '':
-            return []
-        if isinstance(field, FieldList):
-            elements = raw_cell.split(',')
-            sub_element_size = 1
-            if isinstance(field.list_element_type, FieldStruct):
-                sub_element_size = len(field.list_element_type.struct_fields)
-            return [','.join(elements[i:i + sub_element_size])
-                    for i in range(0, len(elements), sub_element_size)]
-        elif isinstance(field, FieldDictionary):
-            elements = raw_cell.split(',')
-            sub_element_size = 1
-            if isinstance(field.dict_value_type, FieldStruct):
-                sub_element_size = len(field.dict_value_type.struct_fields)
-            return [(elements[i], ','.join(elements[i + 1: i + 1 + sub_element_size]))
-                    for i in range(0, len(elements), sub_element_size + 1)]
-        return [raw_cell]
+        try:
+            if raw_cell is None or raw_cell == '':
+                return []
+            if isinstance(field, FieldList):
+                elements = raw_cell.split(',')
+                sub_element_size = 1
+                if isinstance(field.list_element_type, FieldStruct):
+                    sub_element_size = len(field.list_element_type.struct_fields)
+                return [','.join(elements[i:i + sub_element_size])
+                        for i in range(0, len(elements), sub_element_size)]
+            elif isinstance(field, FieldDictionary):
+                elements = raw_cell.split(',')
+                sub_element_size = 1
+                if isinstance(field.dict_value_type, FieldStruct):
+                    sub_element_size = len(field.dict_value_type.struct_fields)
+                return [(elements[i], ','.join(elements[i + 1: i + 1 + sub_element_size]))
+                        for i in range(0, len(elements), sub_element_size + 1)]
+            elif isinstance(field, FieldStruct):
+                elements = raw_cell.split(',')
+                return elements
+            return [raw_cell]
+        except Exception as e:
+            print(f"error in reading: {field.table_name},{field.field_name},{raw_cell}")
+            raise e
 
     @staticmethod
     def to_safe_str(raw_str: Union[str, float, datetime, None]) -> str:
@@ -420,46 +474,6 @@ class CellData:
         for old, new in Table.special_str.items():
             new_str = new_str.replace(old, new)
         return new_str
-
-    @staticmethod
-    def cell_to_str(raw_cell: Union[str, float, datetime, None], field: Field) -> str:
-        if isinstance(field, FieldPrimitive):
-            return CellData.to_safe_str(raw_cell)
-        elif isinstance(field, FieldList):
-            if raw_cell != '':
-                elements = CellData.cell_to_elements(raw_cell, field)
-                raw_str = str(len(elements))
-                for ele in elements:
-                    raw_str = raw_str + ','
-                    raw_str = raw_str + CellData.cell_to_str(ele, field.list_element_type)
-                return raw_str
-            else:
-                return '0'
-        elif isinstance(field, FieldDictionary):
-            if raw_cell != '':
-                elements = CellData.cell_to_elements(raw_cell, field)
-                raw_str = str(len(elements))
-                for (k, v) in elements:
-                    raw_str = raw_str + ','
-                    raw_str = raw_str + CellData.cell_to_str(k, field.dict_key_type)
-                    raw_str = raw_str + ','
-                    raw_str = raw_str + CellData.cell_to_str(v, field.dict_value_type)
-                return raw_str
-            else:
-                return '0'
-        elif isinstance(field, FieldStruct):
-            return CellData.to_safe_str(raw_cell)
-        elif isinstance(field, FieldEnum):
-            enum_value = field.enum_key_to_value.get(raw_cell)
-            if enum_value is None:
-                raise Exception('invalid enum key:' + str(raw_cell))
-            else:
-                return str(enum_value)
-        elif isinstance(field, FieldReference):
-            assert field.ref_type is not None
-            return CellData.cell_to_str(raw_cell, field.ref_type)
-        else:
-            raise Exception('syntax error:' + str(type(field)))
 
     def __str__(self) -> str:
         if self.raw_str is None:
